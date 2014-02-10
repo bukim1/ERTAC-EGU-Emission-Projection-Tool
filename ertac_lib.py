@@ -213,6 +213,8 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
                 row_count += 1
             except sqlite3.IntegrityError as err_msg:
                 print >> logfile, "File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row
+            except sqlite3.ProgrammingError as err_msg:
+                print >> logfile, "File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row
 
     print >> logfile, "File: " + csv_file + "; read", cr.line_num, "lines, stored", row_count, "data rows in table: " + table_name
     connection.commit()
@@ -371,14 +373,14 @@ def make_calendar_hours(base_year, future_year, connection):
         SET calendar_hour = ?
         WHERE rowid = ?""", (calendar_hour, rowid))
         calendar_hour += 1
-
+        
     connection.executescript("""CREATE UNIQUE INDEX calendar_hour
     ON calendar_hours (calendar_hour);
 
     CREATE UNIQUE INDEX calendar_future
     ON calendar_hours (future_date, op_hour);""")
 
-
+	
 
 def check_data_ranges(table_name, connection, column_types, logfile):
     """Check data for valid ranges.

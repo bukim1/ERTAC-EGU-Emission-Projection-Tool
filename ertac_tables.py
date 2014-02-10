@@ -27,7 +27,7 @@ state_set = set(['AK', 'AL', 'AR', 'AS', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE',
                  'VA', 'VI', 'VT', 'WA', 'WI', 'WV', 'WY'])
 
 # All allowed fuel bin types.
-fuel_set = set(['BOILER GAS', 'COAL', 'COMBINED CYCLE GAS', 'OIL', 'SIMPLE CYCLE GAS'])
+fuel_set = set(['BOILER GAS', 'COAL', 'COMBINED CYCLE GAS', 'DEMAND RESPONSE', 'OIL', 'SIMPLE CYCLE GAS'])
 
 camd_columns = (('state', 'str', True, state_set),
                 ('facility_name', 'str', True, None),
@@ -156,8 +156,8 @@ growth_rate_columns = (('NEEDS (IPM) Region', 'str', False, None),
                        ('ERTAC Fuel/Unit Type Bin', 'str', True, fuel_set),
                        ('Base Year', 'year-only', True, ('2007', '2015')),
                        ('Future Year', 'year-only', True, ('2008', '2030')),
-                       ('Average Growth Rate', 'float', True, (0.5, 1.5)),
-                       ('Peak Growth Rate', 'float', True, (0.5, 1.6)),
+                       ('Average Growth Rate', 'float', True, (0.5, 100)),
+                       ('Peak Growth Rate', 'float', True, (0.5, 100)),
                        ('NonPeak Growth Rate', 'float', False, (0.0, 2.0)),
                        ('Transition Hour Peak to Formula', 'int', True, (1, 500)),
                        ('Transition Hour to NonPeak', 'int', True, (50, 4000)),
@@ -201,6 +201,21 @@ control_emission_columns = (('ORISPL_CODE', 'str', True, None),
                             ('UNITID', 'str', True, None),
                             ('Factor Start Date', 'date', False, None),
                             ('Factor End Date', 'date', False, None),
+                            ('Pollutant', 'str', True, None),
+                            ('Emission Rate', 'float', False, None),
+                            ('Control Efficiency', 'float', False, (0.0, 100.0)),
+                            ('Programs for Pollutant', 'str', False, None),
+                            ('Control Description', 'str', False, None),
+                            ('Submitter email', 'str', False, None))
+
+seasonal_control_emission_columns = (('ORISPL_CODE', 'str', True, None),
+                            ('UNITID', 'str', True, None),
+                            ('Factor Start Date', 'date', False, None),
+                            ('Factor End Date', 'date', False, None),
+                            ('Season Start Month', 'int', True, None),
+                            ('Season Start Date', 'int', True, None),
+                            ('Season End Month', 'int', True, None),
+                            ('Season End Date', 'int', True, None),
                             ('Pollutant', 'str', True, None),
                             ('Emission Rate', 'float', False, None),
                             ('Control Efficiency', 'float', False, (0.0, 100.0)),

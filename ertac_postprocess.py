@@ -196,10 +196,6 @@ Usage: %s [OPTION]...
   --orisid=orispl_code.                 limit analysis to this orispl code
   --unitid=unitid.                      limit analysis to this unit id (requires orispl code)
   --time-span=timespan.                 limit analysis to time predefined time span (Annual, FirstQtr, SecondQtr, ThirdQtr, FourthQtr, OzoneSeason)
-  --show-graphs.                        display graphs to screen rather than saving
-  --by-hourss.                          display graphs for 'Calendar' hours, 'Hierachy' hours, or 'Both' (defaults to Both)
-  --large-graphs.                       display large, 1 panel hourly graphs
-  --use-lines.                          display hourly graphs using lines
 """ % progname
 
 def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfile):
@@ -877,8 +873,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", "run-integrity",
             "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "state=", "region=",
-            "fuel-bin=", "orisid=", "unitid=", "time-span=", "show-graphs", "large-graphs",
-            "use-lines", "by-hours=", "sql-database=", "config-file="])
+            "fuel-bin=", "orisid=", "unitid=", "time-span=", "sql-database=", "config-file="])
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -894,7 +889,6 @@ def main(argv=None):
     sql_database      = ''
     config_file       = None
     run_integrity     = None
-    run_plots     = None
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -912,10 +906,6 @@ def main(argv=None):
             input_prefix_proj = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
-        elif opt in ("--run-plots"):
-            run_plots = True
-        elif opt in ("--run-integrity"):
-            run_integrity = True
         elif opt in ("--state"):
             state_clean = True  
             for state in arg.split(","):
@@ -941,18 +931,6 @@ def main(argv=None):
             else:
                 if arg != 'Annual':
                     inputvars['time_span'] = arg
-        elif opt in ("--by-hours"):
-            if arg not in ['Both', 'Calendar', 'Hierarchy']:
-                print "By Hours Not Valid: Defaulting To Annual"
-            else:
-                if arg != 'Both':
-                    inputvars['by_hours'] = arg
-        elif opt in ("--show-graphs"):
-            inputvars['show_graphs'] = True
-        elif opt in ("--large-graphs"):
-            inputvars['use_large_graphs'] = True
-        elif opt in ("--use-lines"):
-            inputvars['use_lines'] = True
         elif opt in ("--sql-database"):
             sql_database = arg
         elif opt in ("--config-file"):
@@ -1081,29 +1059,6 @@ def main(argv=None):
     #this stretch makes the directory structure necessary for saving results
     if not os.path.exists(output_prefix+'post_results'):
         os.makedirs(output_prefix+'post_results')
-    if 'show_graphs' not in inputvars and run_plots:
-        if not os.path.exists(output_prefix+'post_results/hourly_unitlevel'):
-            os.makedirs(output_prefix+'post_results/hourly_unitlevel')
-        if not os.path.exists(output_prefix+'post_results/annual_unitlevel'):
-            os.makedirs(output_prefix+'post_results/annual_unitlevel')
-        if not os.path.exists(output_prefix+'post_results/hourly_regional'):
-            os.makedirs(output_prefix+'post_results/hourly_regional')
-        if not os.path.exists(output_prefix+'post_results/hourly_state'):
-            os.makedirs(output_prefix+'post_results/hourly_state')
-        index = open(output_prefix+'post_results/index.html', 'w')
-        print >> index, "<h1>Index For ERTAC Post-Processing</h1>"
-        print >> index, "<p>Start Time: "+ time.asctime()
-        if 'region' in inputvars:
-            print >> index, "<br/>Region: "+inputvars['region']
-        if 'fuel_bin' in inputvars:
-            print >> index, "<br/>Fuel Bin Type: "+inputvars['fuel_bin']
-        if 'orisid' in inputvars:
-            print >> index, "<br/>ORISPL Code: "+inputvars['orisid']
-            if 'unitid' in inputvars:
-                print >> index, "<br/>Unit ID: "+inputvars['unitid']
-        inputvars['images_folder'] = output_prefix+'post_results'
-        inputvars['index'] = output_prefix+'post_results/index.html'
-        index.close()
 
     if existing_db_file:
         logging.info("Using the existing summary data for plots and CSV files...")
@@ -1117,17 +1072,6 @@ def main(argv=None):
             logging.info("Running integrity check...")
             print >> logfile, "Running integrity check..."
             run_intergrity_check(dbconn, logfile)
-
-
-    if run_plots:
-        logging.info("Plotting.")
-        print >> logfile
-        print >> logfile, "Plotting."
-        #Perform all of the plotting
-        if 'ertac_region' in inputvars:
-            plot_state(dbconn, '', inputvars, logfile)
-        plot_regional(dbconn, '', inputvars, logfile)
-        plot_all_units(dbconn, '', inputvars, logfile)
 
     # Export projection report tables as CSV files.
     logging.info("Writing out reports:")

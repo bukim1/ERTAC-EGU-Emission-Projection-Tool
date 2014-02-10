@@ -206,6 +206,25 @@ control_programs TEXT,
 control_description TEXT,
 submitter_email TEXT);
 
+-- ERTAC_SEASONAL_CONTROL_EMISSIONS
+-- this is a new table to ease the process of keeping seasonal controls up to date
+DROP TABLE IF EXISTS ertac_seasonal_control_emissions;
+CREATE TABLE ertac_seasonal_control_emissions
+(orispl_code TEXT NOT NULL COLLATE NOCASE,
+unitid TEXT NOT NULL COLLATE NOCASE,
+factor_start_date TEXT,
+factor_end_date TEXT,
+season_start_month INTEGER NOT NULL,
+season_end_month INTEGER NOT NULL,
+season_start_date INTEGER NOT NULL,
+season_end_date INTEGER NOT NULL,
+pollutant_code TEXT NOT NULL COLLATE NOCASE,
+emission_rate REAL,
+control_efficiency REAL,
+control_programs TEXT,
+control_description TEXT,
+submitter_email TEXT);
+
 -- STATES, lookup table of postal abbreviations and FIPS state codes.
 DROP TABLE IF EXISTS states;
 CREATE TABLE states

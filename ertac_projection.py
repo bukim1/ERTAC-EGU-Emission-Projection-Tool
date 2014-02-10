@@ -8,6 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
+VERSION = "1.01"
+
 import sys
 
 try:
@@ -145,10 +147,12 @@ def main(argv=None):
 
     # Identify versions of Python and SQLite library, and record in log file.
     logging.info("Program started at " + time.asctime())
+    logging.info("ERTAC EGU version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
     print >> logfile, "Program started at " + time.asctime()
+    print >> logfile, "ERTAC EGU version: " + VERSION
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
@@ -160,7 +164,6 @@ def main(argv=None):
 
     # Create and populate the working database.
     try:
-        #dbconn = sqlite3.connect('ertac_projection.db')
         dbconn = sqlite3.connect('')
         dbconn.text_factory = str
     except:
@@ -568,15 +571,27 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
     """
     # Assign proxy generation in the hourly_diagnostic_file based on
     # calc_generation_proxy, subject to hourly HI and annual UF limits.
-    for (state, plant, unit, gload) in conn.execute("""SELECT state, orispl_code, unitid, gload_proxy
-    FROM calc_generation_proxy
-    WHERE ertac_region = ?
-    AND ertac_fuel_unit_type_bin = ?
-    AND op_date = ?
-    AND op_hour = ?""", (region, fuel, date, hour)).fetchall():
+    
+    #jmj 10/22/2013 commenting out the original sql draw to get infomration about future gen and total proxy
+    #for (state, plant, unit, gload) in conn.execute("""SELECT state, orispl_code, unitid, gload_proxy
+    for (state, plant, unit, gload, future_gen, total_proxy) in conn.execute("""SELECT state, orispl_code, unitid, gload_proxy, future_projected_generation, total_proxy_generation
+    FROM calc_generation_proxy AS prox
+    LEFT JOIN calc_generation_parms AS parms
+    ON prox.ertac_region = parms.ertac_region
+    AND prox.ertac_fuel_unit_type_bin = parms.ertac_fuel_unit_type_bin
+    AND prox.op_date = parms.op_date
+    AND prox.op_hour = parms.op_hour
+    WHERE prox.ertac_region = ?
+    AND prox.ertac_fuel_unit_type_bin = ?
+    AND prox.op_date = ?
+    AND prox.op_hour = ?""", (region, fuel, date, hour)).fetchall():
 
         if gload is None:
             gload = 0.0
+            
+        #jmj 10/22/2013 apply a percent reduction to the gross load if the proxy generation is higher than the future generation needed
+        if total_proxy > 0 and future_gen < total_proxy:
+            gload = gload * future_gen/total_proxy
 
         if hierarchy_hour > 1:
             # Get previous hour's running totals.
@@ -805,8 +820,26 @@ def add_generic_units(conn, region, fuel, capacity_needed, new_unit_max_size, ne
         # 20120501 Handle case where region/fuel had no existing units in
         # hierarchy.
         if max_rank is None:
-            max_rank = 0
-        anchor_rank = max_rank - int(max_rank * new_unit_placement_pct / 100.0)
+            max_rank = 0     
+            anchor_rank = 0  
+        else:      
+            #jmj do an else here where you also find the highest New Unit allcoation and have that be the anchor rank
+            #no need to check if max rank is none since
+            (new_unit_rank,) = conn.execute("""SELECT MAX(unit_allocation_order)
+                FROM calc_unit_hierarchy hier
+                LEFT JOIN calc_updated_uaf uaf
+                ON uaf.ertac_region = hier.ertac_region
+                AND uaf.ertac_fuel_unit_type_bin = hier.ertac_fuel_unit_type_bin
+                AND uaf.orispl_code = hier.orispl_code
+                AND uaf.unitid = hier.unitid
+                WHERE hier.ertac_region = ?
+                AND hier.ertac_fuel_unit_type_bin = ?
+                AND uaf.camd_by_hourly_data_type = 'NEW'""", (region, fuel)).fetchone()
+            if new_unit_rank:
+                anchor_rank = new_unit_rank
+            else: 
+                anchor_rank = max_rank - int(max_rank * new_unit_placement_pct / 100.0)
+            
         for (ranked_plant, ranked_unit) in conn.execute("""SELECT orispl_code, unitid
         FROM calc_unit_hierarchy
         WHERE ertac_region = ?
@@ -1186,7 +1219,10 @@ def summarize_unit_activity(conn, logfile):
         AND unitid = ?
         AND ertac_fuel_unit_type_bin = ?""", (plant, unit, fuel)).fetchone()
         if heat_rate is not None and heat_rate > 0.0:
-            gen_cap = 1000.0 * max_hi / heat_rate
+            if max_hi is None:
+                x = 1
+            else:
+                gen_cap = 1000.0 * max_hi / heat_rate
         else:
             gen_cap = None
         (hours_at_max,) = conn.execute("""SELECT COUNT(*)
@@ -1330,12 +1366,13 @@ def calculate_future_emissions(conn, base_year, ozone_start_base, ozone_end_base
     for (region, fuel) in conn.execute("""SELECT DISTINCT ertac_region, ertac_fuel_unit_type_bin
     FROM by_emission_summary
     ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall():
-
+ 
+        print region + " " + fuel    
         (new_unit_ef_pct,) = conn.execute("""SELECT new_unit_emission_factor_percentile
         FROM calc_input_variables
         WHERE ertac_region = ?
         AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
-
+  
         so2_list = conn.execute("""SELECT so2_rate
         FROM by_emission_summary
         WHERE ertac_region = ?
