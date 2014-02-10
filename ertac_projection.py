@@ -160,6 +160,7 @@ def main(argv=None):
 
     # Create and populate the working database.
     try:
+        #dbconn = sqlite3.connect('ertac_projection.db')
         dbconn = sqlite3.connect('')
         dbconn.text_factory = str
     except:
