@@ -500,12 +500,12 @@ def summarize_hourly_results(conn, inputvars, logfile):
             
         for (orisid, unitid, region, fuel_bin) in conn.execute(query + where, [state, fuel_unit_type_bin, str(inputvars['base_year']) + '-01-01', str(inputvars['future_year']) + '-01-01'] + inputs).fetchall():
            #Have to ensure it isn't a new unit that switched
-            (switch_count,) = conn.execute("""SELECT count(*) FROM calc_updated_uaf cuuaf
-            WHERE (upper(cuuaf.camd_by_hourly_data_type) = 'FULL' OR upper(cuuaf.camd_by_hourly_data_type) = 'PARTIAL') AND
-            cuuaf.orispl_code = ? AND 
-            cuuaf.ertac_region = ? AND 
-            cuuaf.ertac_fuel_unit_type_bin != ? AND 
-            cuuaf.unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
+            (switch_count,) = conn.execute("""SELECT count(*) FROM hourly_activity_summary
+            WHERE data_type = 'SWITCH' AND
+            orispl_code = ? AND 
+            ertac_region = ? AND 
+            ertac_fuel_unit_type_bin != ? AND 
+            unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
       
             if switch_count == 0:          
                 query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, by_hour_specific_growth_rate, by_afygr, data_type, facility_name)
@@ -534,7 +534,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
                        cuuaf.facility_name
                 FROM calc_updated_uaf cuuaf
         
-                JOIN calc_hourly_base chb
+                LEFT JOIN calc_hourly_base chb
                 ON cuuaf.orispl_code = chb.orispl_code
                 AND cuuaf.unitid = chb.unitid
                 AND cuuaf.ertac_region = chb.ertac_region
