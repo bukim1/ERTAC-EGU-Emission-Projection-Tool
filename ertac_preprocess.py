@@ -341,11 +341,6 @@ def main(argv=None):
     # 20120430 New edit check to warn about region/fuel where all units retired.
     logging.info("Checking for region/fuel with all units retired in future.")
     check_all_units_retired(dbconn, future_year, logfile)
-    
-    #jmj 11/20/2013 adding base year operating calculations prior to filling in partial year reports
-    logging.info("Calculating base year operating hours.")
-    calculate_base_year_op_hours(dbconn, logfile)
-
     # If base year was a leap year but future year isn't, delete recorded
     # Feb. 29 data before ranking days/hours for hierarchy.
     if ertac_lib.is_leap_year(base_year) and not ertac_lib.is_leap_year(future_year):
@@ -361,6 +356,11 @@ def main(argv=None):
     # instead.
     logging.info("Filling GLOAD for units that report only SLOAD.")
     fill_gload_from_sload(dbconn, logfile)
+    
+    #jmj 11/20/2013 adding base year operating calculations prior to filling in partial year reports
+    logging.info("Calculating base year operating hours.")
+    calculate_base_year_op_hours(dbconn, logfile)
+
 
     # 1.05, 1.06: Fill remaining hours of any partial-year data using flat
     # profile (if part-HI supplied) or 0, reporting summary.
@@ -459,8 +459,6 @@ def load_initial_data(conn, in_prefix, logfile):
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base.csv', 'camd_hourly_base', conn, ertac_tables.camd_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix, 'ertac_hourly_noncamd.csv', 'ertac_hourly_noncamd', conn, ertac_tables.camd_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_initial_uaf.csv', 'ertac_initial_uaf', conn, ertac_tables.uaf_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_growth_rates.csv', 'ertac_growth_rates', conn, ertac_tables.growth_rate_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_input_variables.csv', 'ertac_input_variables', conn, ertac_tables.input_variable_columns, logfile)
@@ -470,7 +468,10 @@ def load_initial_data(conn, in_prefix, logfile):
     ertac_lib.load_csv_into_table(in_prefix, 'state_total_listing.csv', 'state_total_listing', conn, ertac_tables.state_total_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'group_total_listing.csv', 'group_total_listing', conn, ertac_tables.group_total_columns, logfile)
 
-
+    #jmj 3/31/2014 moved these to the bottom so that any failures in other files happen first given the length of time to load these
+    ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base.csv', 'camd_hourly_base', conn, ertac_tables.camd_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix, 'ertac_hourly_noncamd.csv', 'ertac_hourly_noncamd', conn, ertac_tables.camd_columns, logfile)
+    
 
 def validate_base_and_future_years(conn, logfile):
     """Validate the base_year and future_year for input variables, growth rates, and hourly data.
@@ -1097,6 +1098,44 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
         print >> logfile, "Warning: seasonal control/emissions has seasonal factors with missing or overlapping start/end dates:"
         print >> logfile, errors
 
+
+    errors = ""
+    for (plant, unit, poll, ssm, ssd, sem, sed, fsdate, fedate) in conn.execute("""SELECT ece.orispl_code, ece.unitid, ece.pollutant_code,
+        season_start_month, season_start_date, season_end_month, season_end_date, 
+        ece.factor_start_date, ece.factor_end_date
+        FROM ertac_seasonal_control_emissions esce
+        INNER JOIN ertac_control_emissions ece
+        ON esce.orispl_code = ece.orispl_code
+        AND esce.unitid = ece.unitid
+        AND esce.pollutant_code= ece.pollutant_code
+        ORDER BY ece.orispl_code, ece.unitid, ece.pollutant_code""").fetchall():
+             
+        print (plant, unit, poll, ssm, ssd, sem, sed, fsdate, fedate)
+        if len(fsdate.split("-")) == 3:
+            (fsy, fsm, fsd) = fsdate.split("-")
+        else:
+            (fsy, fsm, fsd) = (base_year, 1,1)    
+           
+        if len(fedate.split("-")) == 3:
+            (fey, fem, fed) = fedate.split("-")
+        else:
+            (fey, fem, fed) = (2030, 12,31)
+        
+        #jmj convert this to actual date checks
+        print (fsm,fsd, fsy, fem, fed, fey, base_year) 
+        if int(future_year) > int(fsy) or (int(future_year) == int(fsy) and (ssm > int(fsm) or (ssm == int(fsm) and ssd >= int(fsd)))):
+            if int(future_year) < int(fey) or (int(future_year) == int(fey) and (ssm < int(fem) or (ssm == int(fem) and ssd <= int(fed)))):
+                errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((ssm, ssd, sem, sed)) + " has a date that overlaps an entry in the conrol file\n"
+        else:
+            if int(future_year) < int(fey) or (int(future_year) == int(fey) and (sem < int(fem) or (sem == int(fem) and sed <= int(fed)))):
+                if int(future_year) > int(fsy) or (int(future_year) == int(fsy) and (sem > int(fsm) or (sem == int(fsm) and sed >= int(fsd)))):
+                    errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((ssm, ssd, sem, sed)) + " has a date that overlaps an entry in the conrol file\n"
+                 
+                
+    if errors != "":
+        print >> logfile, "Warning: seasonal control/emissions has seasonal factors that overlap entries in the control file:"
+        print >> logfile, errors
+        
     # 20120423 Added warning for check that control/emissions data is for future years.
     day_after_base_year = ertac_lib.first_day_after(base_year)
 
