@@ -1110,7 +1110,6 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
         AND esce.pollutant_code= ece.pollutant_code
         ORDER BY ece.orispl_code, ece.unitid, ece.pollutant_code""").fetchall():
              
-        print (plant, unit, poll, ssm, ssd, sem, sed, fsdate, fedate)
         if len(fsdate.split("-")) == 3:
             (fsy, fsm, fsd) = fsdate.split("-")
         else:
@@ -1122,7 +1121,6 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
             (fey, fem, fed) = (2030, 12,31)
         
         #jmj convert this to actual date checks
-        print (fsm,fsd, fsy, fem, fed, fey, base_year) 
         if int(future_year) > int(fsy) or (int(future_year) == int(fsy) and (ssm > int(fsm) or (ssm == int(fsm) and ssd >= int(fsd)))):
             if int(future_year) < int(fey) or (int(future_year) == int(fey) and (ssm < int(fem) or (ssm == int(fem) and ssd <= int(fed)))):
                 errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((ssm, ssd, sem, sed)) + " has a date that overlaps an entry in the conrol file\n"
