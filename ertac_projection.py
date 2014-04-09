@@ -1367,7 +1367,6 @@ def calculate_future_emissions(conn, base_year, ozone_start_base, ozone_end_base
     FROM by_emission_summary
     ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall():
  
-        print region + " " + fuel    
         (new_unit_ef_pct,) = conn.execute("""SELECT new_unit_emission_factor_percentile
         FROM calc_input_variables
         WHERE ertac_region = ?
