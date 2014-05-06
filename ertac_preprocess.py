@@ -1617,6 +1617,23 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
         return
 
     (max_hours,) = hour_result
+    
+    #jmj 5/2/2014 warn about units marked as partial year reporters that are full year reporters 
+    non_partial_reporters = conn.execute("""SELECT hourly_summary.ertac_region, hourly_summary.ertac_fuel_unit_type_bin, hourly_summary.orispl_code, hourly_summary.unitid
+    FROM hourly_summary
+    LEFT JOIN calc_updated_uaf
+    ON calc_updated_uaf.orispl_code = hourly_summary.orispl_code
+    AND calc_updated_uaf.unitid = hourly_summary.unitid
+    AND calc_updated_uaf.ertac_region = hourly_summary.ertac_region
+    AND calc_updated_uaf.ertac_fuel_unit_type_bin = hourly_summary.ertac_fuel_unit_type_bin
+    WHERE hours_total = ? and camd_by_hourly_data_type in ('Partial')
+    ORDER BY hourly_summary.orispl_code, hourly_summary.unitid, hourly_summary.ertac_fuel_unit_type_bin""", (max_hours,)).fetchall()
+    if len(non_partial_reporters) > 0:
+        print >> logfile, "  Warning: units marked as Partial-Year Reporters reported for the Full Year"
+        for plant in non_partial_reporters:
+            print >> logfile, "  " + ertac_lib.nice_str(plant)
+    
+    
     # Loop over all units with partial data, looking up their UAF status to
     # determine how to fill remainder.
     partial_reporters = conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin,
@@ -1625,7 +1642,7 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
     WHERE hours_total < ?
     ORDER BY orispl_code, unitid, ertac_fuel_unit_type_bin""", (max_hours,)).fetchall()
     if len(partial_reporters) == 0:
-        print >> logfile, "  All units reported same number of hours."
+        print >> logfile, "  All units reported same number of hours: " + max_hours
         return
 
     for (region, fuel, plant, unit, gload_total, so2_total, nox_total, co2_total,
