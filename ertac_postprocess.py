@@ -55,29 +55,26 @@ except ImportError:
 
 # Post-processor specific table structure definition
 hourly_activity_summary_columns = (('ertac region', 'str', True, None),
+                       ('BY ertac fuel unit type bin', 'str', True, fuel_set),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
-                       ('FY ertac fuel unit type bin', 'str', True, fuel_set),
                        ('oris', 'str', True, None),
                        ('unit id', 'str', True, None),
-                       ('old_unit id', 'str', False, None),
                        ('state', 'str', True, state_set),
                        ('calendar hour', 'int', True, (0, 8760)),
                        ('hierarchy hour', 'int', True, (0, 8760)),
                        ('BY hierarchy hour', 'int', True, (0, 8760)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
-                       ('BY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('FY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('BY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('FY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('BY nox_mass (Tons)', 'float', False, (0.0, 20000.0)),
-                       ('FY nox_mass (Tons)', 'float', False, (0.0, 20000.0)),
-                       ('hour_specific_growth_rate', 'float', False, None),
+                       ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('FY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('hour specific growth rate', 'float', False, None),
                        ('afygr', 'float', False, None),
-                       ('BY hour_specific_growth_rate', 'float', False, None),
-                       ('BY afygr', 'float', False, None),
-                       ('data_type', 'str', False, None),
-                       ('facility_name', 'str', False, None))
+                       ('data type', 'str', False, None),
+                       ('facility name', 'str', False, None))
 
 hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
@@ -85,40 +82,41 @@ hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                        ('hierarchy hour', 'int', True, (0, 8760)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
-                       ('BY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('FY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('BY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('FY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('BY nox_mass (Tons)', 'float', False, (0.0, 20000.0)),
-                       ('FY nox_mass (Tons)', 'float', False, (0.0, 20000.0)),
-                       ('hour_specific_growth_rate', 'float', False, None),
+                       ('Number of units op hour max', 'int', True, None),
+                       ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('FY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('hour specific growth rate', 'float', False, None),
                        ('afygr', 'float', False, None))
 
 hourly_state_summary_columns = (('state', 'str', True, state_set),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
                        ('calendar hour', 'int', True, (0, 8760)),
-                       ('hierarchy hour', 'int', True, (0, 8760)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
-                       ('BY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('FY heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('BY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('FY so2_mass (Tons)', 'float', False, (0.0, 100000.0)),
-                       ('BY nox_mass (Tons)', 'float', False, (0.0, 20000.0)),
-                       ('FY nox_mass (Tons)', 'float', False, (0.0, 20000.0)))
+                       ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('FY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)))
 
 annual_summary_columns = (('oris', 'str', True, None),
                        ('unit id', 'str', True, None),
-                       ('old_unit id', 'str', False, None),
-                       ('facility_name', 'str', False, None),
-                       ('state', 'str', True, state_set),
+                       ('Facility Name', 'str', False, None),
+                       ('State', 'str', True, state_set),
+                       ('FIPS Code', 'str', False, None),
                        ('ertac region', 'str', True, None),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
                        ('BY ertac fuel unit type bin', 'str', True, fuel_set),
-                       ('max_unit_heat_input (mmBtu)', 'float', False, None),
-                       ('ertac_heat_rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
-                       ('nameplate_capacity (MW)', 'float', False, None),
-                       ('FY op hour Max', 'int', True, (0, 8760)),
+                       ('max unit heat input (mmBtu)', 'float', False, None),
+                       ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
+                       ('Generation Capacity (MW)', 'float', False, None),
+                       ('Nameplate Capacity (MW)', 'float', False, None),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -149,7 +147,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('Generation Deficit Unit?', 'str', False, ['Y','N']),
                        ('Retirement Date', 'str', False, None),
                        ('New Unit?', 'str', False, ['Y','N']),
-                       ('data_type', 'str', False, None))
+                       ('data type', 'str', False, None))
 
 
 gen_parms_columns = (('ertac_region', 'str', True, None),
@@ -231,7 +229,6 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
     ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile)
    
     query= """SELECT hdf.orispl_code, hdf.unitid FROM hourly_diagnostic_file hdf
     LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
@@ -280,7 +277,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
         logging.info("Processing - " + state + ", " + fuel_unit_type_bin)
         
         #Full and Partial Reporters
-        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, by_hour_specific_growth_rate, by_afygr, data_type, facility_name)
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
                hdf.ertac_fuel_unit_type_bin,
                hdf.ertac_fuel_unit_type_bin,
@@ -298,8 +295,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
-               cgp.hour_specific_growth_rate,
-               cgp.afygr,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                upper(cuuaf.camd_by_hourly_data_type),
@@ -349,7 +344,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
          
         #
         #Switchers
-        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, by_hour_specific_growth_rate, by_afygr, data_type, facility_name)
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
                hdf.ertac_fuel_unit_type_bin,
                cuuaf.ertac_fuel_unit_type_bin,
@@ -367,8 +362,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
-               cgp.hour_specific_growth_rate,
-               cgp.afygr,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                'SWITCH',
@@ -443,13 +436,12 @@ def summarize_hourly_results(conn, inputvars, logfile):
             cuuaf.unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
             
             if switch_count == 0:
-                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, old_unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, by_hour_specific_growth_rate, by_afygr, data_type, facility_name)
+                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
                 SELECT hdf.ertac_region,
                        hdf.ertac_fuel_unit_type_bin,
                        hdf.ertac_fuel_unit_type_bin,
                        hdf.orispl_code,
                        hdf.unitid,
-                       0,
                        hdf.state,
                        hdf.calendar_hour,
                        hdf.hierarchy_hour,
@@ -464,8 +456,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
                        hdf.nox_mass/2000,
                        cgp.hour_specific_growth_rate,
                        cgp.afygr,
-                       NULL,
-                       NULL,
                        'NEW',
                        ?
                 FROM hourly_diagnostic_file hdf
@@ -508,13 +498,14 @@ def summarize_hourly_results(conn, inputvars, logfile):
             unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
       
             if switch_count == 0:          
-                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, by_hour_specific_growth_rate, by_afygr, data_type, facility_name)
+                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
                 SELECT cuuaf.ertac_region,
                        cuuaf.ertac_fuel_unit_type_bin,
                        cuuaf.ertac_fuel_unit_type_bin,
                        cuuaf.orispl_code,
                        cuuaf.unitid,
                        cuuaf.state,
+                       cuuaf.fips_code,
                        ch.calendar_hour,
                        NULL,
                        chh.hierarchy_hour,
@@ -528,8 +519,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
                        0/2000,
                        NULL,
                        NULL,
-                       cgp.hour_specific_growth_rate,
-                       cgp.afygr,
                        'RETIRED',
                        cuuaf.facility_name
                 FROM calc_updated_uaf cuuaf
@@ -571,13 +560,15 @@ def summarize_hourly_results(conn, inputvars, logfile):
             orispl_code, 
             unitid, 
             state, 
+            fips_code, 
             longitude,
             latitude,
             retirement_date,
             hierarchy_order,
             max_unit_heat_input, 
             ertac_heat_rate, 
-            nameplate_capacity, 
+            generation_capacity, 
+            nameplate_capacity,
             fy_op_hours_max, 
             by_uf, 
             fy_uf, 
@@ -613,6 +604,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             has.orispl_code, 
             has.unitid, 
             has.state, 
+            cuuaf.fips_code, 
             cuuaf.plant_longitude,
             cuuaf.plant_latitude,
             offline_start_date,
@@ -620,6 +612,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             max_ertac_hi_hourly_summer, 
             ertac_heat_rate, 
             1000 * max_ertac_hi_hourly_summer / ertac_heat_rate, 
+            cuuaf.nameplate_capacity,
             sum(COALESCE(fy_gload,0)>=(1000 * max_ertac_hi_hourly_summer / ertac_heat_rate)), 
             sum(COALESCE(by_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
             sum(COALESCE(fy_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
@@ -678,15 +671,23 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""")
  
            
-    conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, calendar_hour, hierarchy_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
-        SELECT ertac_region, fuel_bin, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
+    conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
+        SELECT ertac_region, fuel_bin, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
+    
         FROM
-        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, by_hour_specific_growth_rate as hour_specific_growth_rate, by_afygr as afygr
-        FROM hourly_activity_summary
+        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, 0 as op_max, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, hour_specific_growth_rate as hour_specific_growth_rate, afygr as afygr
+        FROM hourly_activity_summary 
         WHERE by_hierarchy_hour IS NOT NULL
         UNION ALL
-        SELECT ertac_region, ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr
-        FROM hourly_activity_summary
+        SELECT has.ertac_region, has.ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, COALESCE(fy_gload,0)>=(1000 * max_ertac_hi_hourly_summer / ertac_heat_rate) as op_max, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr
+        FROM hourly_activity_summary has
+
+        JOIN calc_updated_uaf cuuaf
+        ON cuuaf.orispl_code = has.orispl_code
+        AND cuuaf.unitid = has.unitid
+        AND cuuaf.ertac_region = has.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = has.ertac_fuel_unit_type_bin
+        
         WHERE hierarchy_hour IS NOT NULL) 
         GROUP BY ertac_region,  fuel_bin, calendar_hour, hierarchy_hour""")
      
@@ -848,7 +849,6 @@ def write_final_data(conn, out_prefix, logfile):
     ertac_lib.export_table_to_csv('hourly_regional_activity_summary', out_prefix+'post_results/', 'hourly_regional_activity_summary.csv', conn, hourly_regional_summary_columns, logfile)
     ertac_lib.export_table_to_csv('hourly_state_activity_summary', out_prefix+'post_results/', 'hourly_state_activity_summary.csv', conn, hourly_state_summary_columns, logfile)
     ertac_lib.export_table_to_csv('annual_summary', out_prefix+'post_results/', 'annual_unit_summary.csv', conn, annual_summary_columns, logfile)
-    ertac_lib.export_table_to_csv('generation_parms', out_prefix+'post_results/', 'generation_parms.csv', conn, gen_parms_columns, logfile)
     #add state/regional dump
 
 def create_postprocessing_tables(conn):
@@ -873,7 +873,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", "run-integrity",
             "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "state=", "region=",
-            "fuel-bin=", "orisid=", "unitid=", "time-span=", "sql-database=", "config-file="])
+            "fuel-bin=", "orisid=", "time-span=", "sql-database=", "config-file="])
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -900,6 +900,8 @@ def main(argv=None):
             debug_level = "NONE"
         elif opt in ("-v", "--verbose"):
             debug_level = "INFO"
+        elif opt in ("--run-integrity"):
+            run_integrity = True
         elif opt in ("--input-prefix-pre"):
             input_prefix_pre = arg
         elif opt in ("--input-prefix-proj"):
@@ -923,8 +925,6 @@ def main(argv=None):
                 inputvars['fuel_bin'] = arg
         elif opt in ("--orisid"):
             inputvars['orisid'] = arg
-        elif opt in ("--unitid"):
-            inputvars['unitid'] = arg
         elif opt in ("--time-span"):
             if arg not in ['Annual', 'FirstQtr', 'FirstQuarter' 'SecondQtr', 'SecondQuarter', 'ThirdQtr', 'ThirdQuarter', 'FourthQtr', 'FourthQuarter', 'OzoneSeason']:
                 print "Timespan Not Valid: Defaulting To Annual"
