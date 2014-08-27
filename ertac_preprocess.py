@@ -1642,7 +1642,7 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
     WHERE hours_total < ?
     ORDER BY orispl_code, unitid, ertac_fuel_unit_type_bin""", (max_hours,)).fetchall()
     if len(partial_reporters) == 0:
-        print >> logfile, "  All units reported same number of hours: " + max_hours
+        print >> logfile, "  All units reported same number of hours: " + str(max_hours)
         return
 
     for (region, fuel, plant, unit, gload_total, so2_total, nox_total, co2_total,
