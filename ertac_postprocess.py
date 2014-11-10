@@ -8,6 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
+VERSION = "1.02"
+
 import sys
 try:
     import getopt, logging, os, time, re
@@ -131,6 +133,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('BY OS NOx (tons)', 'float', False, None),
                        ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('BY OS heat input (mmbtu)', 'float', False, None),
+                       ('BY OS generation (MW-hrs)', 'float', False, None),
                        ('BY NonOS NOx (tons)', 'float', False, None),
                        ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY Annual SO2 (tons)', 'float', False, None),
@@ -140,6 +143,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('FY OS NOx (tons)', 'float', False, None),
                        ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY OS heat input (mmbtu)', 'float', False, None),
+                       ('FY OS generation (MW-hrs)', 'float', False, None),
                        ('FY NonOS NOx (tons)', 'float', False, None),
                        ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('Hierarchy Order', 'int', False, None),
@@ -582,6 +586,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             fy_heat_input, 
             by_os_heat_input, 
             fy_os_heat_input, 
+            by_os_generation, 
+            fy_os_generation, 
             by_so2_mass, 
             fy_so2_mass, 
             by_nox_mass, 
@@ -626,6 +632,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             sum(COALESCE(fy_heat_input,0)), 
             sum(COALESCE(by_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
             sum(COALESCE(fy_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
+            sum(COALESCE(by_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
+            sum(COALESCE(fy_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
             sum(COALESCE(by_so2_mass,0)), 
             sum(COALESCE(fy_so2_mass,0)), 
             sum(COALESCE(by_nox_mass,0)), 
@@ -974,6 +982,7 @@ def main(argv=None):
 
     # Identify versions of Python and SQLite library, and record in log file.
     logging.info("Program started at " + time.asctime())
+    logging.info("ERTAC EGU version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
