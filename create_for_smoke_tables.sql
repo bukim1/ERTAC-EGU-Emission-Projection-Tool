@@ -1,8 +1,15 @@
 -- create_for_smoke_tables.sql
 -- Create all output tables for ERTAC EGU postprocessor.
-DROP TABLE IF EXISTS camd_hourly_base;
-CREATE TABLE camd_hourly_base
-(state TEXT NOT NULL COLLATE NOCASE,
+-- CALC_HOURLY_BASE, p.42, same format as CAMD_HOURLY_BASE and
+-- ERTAC_HOURLY_NONCAMD in input, with fuel bin added to accomodate units with
+-- fuel switches.  Since we had to add the fuel bin, also added ertac_region to
+-- make some of the summary stages simpler by reducing table joins.
+-- 4/12/2012 Changed relative order of key columns in index.
+DROP TABLE IF EXISTS calc_hourly_base;
+CREATE TABLE calc_hourly_base
+(ertac_region TEXT NOT NULL COLLATE NOCASE,
+ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+state TEXT NOT NULL COLLATE NOCASE,
 facility_name TEXT NOT NULL COLLATE NOCASE,
 orispl_code TEXT NOT NULL COLLATE NOCASE,
 unitid TEXT NOT NULL COLLATE NOCASE,
@@ -24,7 +31,7 @@ co2_mass_flag TEXT,
 co2_rate REAL,
 co2_rate_flag TEXT,
 heat_input REAL,
-PRIMARY KEY (orispl_code, unitid, op_date, op_hour));
+PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, op_date, op_hour, orispl_code, unitid));
 
 -- CALC_UPDATED_UAF, p.43, same format as ERTAC_INITIAL_UAF in input.
 DROP TABLE IF EXISTS calc_updated_uaf;
@@ -202,8 +209,8 @@ orispl_code TEXT NOT NULL COLLATE NOCASE,
 unitid TEXT NOT NULL COLLATE NOCASE,
 calendar_hour INTEGER NOT NULL,
 hierarchy_hour INTEGER NOT NULL,
-hourly_hi_limit TEXT NOT NULL COLLATE NOCASE,
-annual_hi_limit TEXT NOT NULL COLLATE NOCASE,
+hourly_hi_limit TEXT,
+annual_hi_limit TEXT,
 cumulative_hi REAL,
 cumulative_gen REAL,
 gload REAL,

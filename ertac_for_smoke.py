@@ -16,9 +16,6 @@ except ImportError:
     print >> sys.stderr, "Run python -V to find your Python version."
     raise
 
-os.environ['TMP'] = 'g:/ertac/tmp/sqlite/'
-os.environ['TEMP'] = 'g:/ertac/tmp/sqlite/'
-os.environ['TEMPDIR'] = 'g:/ertac/tmp/sqlite/'
 
 try:
     import sqlite3
@@ -31,8 +28,7 @@ except ImportError:
         raise
 
 try:
-    import ertac_lib, ertac_reports, geonames
-    from   ertac_tables import * # importaing all dictionaries, tables, etc
+    import ertac_lib, ertac_tables, ertac_reports, geonames
 except ImportError:
     print >> sys.stderr, "Fatal error: can't import all required modules."
     print >> sys.stderr, "Put all ERTAG EGU library code in directory with preprocessor and projection model."
@@ -83,24 +79,6 @@ Usage: %s [OPTION]...
 """ % progname
 
 time_zones = ['GMT', 'ADT', 'AST', 'EDT', 'EST', 'CDT', 'CST', 'MDT', 'MST', 'PDT', 'PST']
-
-hourly_diagnostic_columns = (('ertac region', 'str', True, None),
-                       ('ertac fuel unit type bin', 'str', True, fuel_set),
-                       ('state', 'str', True, state_set),
-                       ('oris', 'str', True, None),
-                       ('unit id', 'str', True, None),
-                       ('calendar hour', 'int', True, (0, 8760)),
-                       ('hierarchy hour', 'int', True, (0, 8760)),
-                       ('did the hour hit the hourly heat input limitation for the unit?', 'str', False, None),
-                       ('has the cumulative heat input hit an annual cap?', 'str', False, None),
-                       ('cumulative hi (mmbtu)', 'float', False, (0.0, 2300.0)),
-                       ('cumulative gen (MW-hrs)', 'float', False, (0.0, 240000.0)),
-                       ('gload (MW)', 'float', False, (0.0, 2300.0)),
-                       ('heat_input (mmBtu)', 'float', False, (0.0, 29000.0)),
-                       ('so2_mass (lbs)', 'float', False, (0.0, 100000.0)),
-                       ('so2_rate (lbs/mmBtu)', 'float', False, None),
-                       ('nox_rate (lbs/mmBtu)', 'float', False, None),
-                       ('nox_mass (lbs)', 'float', False, (0.0, 20000.0)))
 
 #table layout based on http://www.smoke-model.org/version3.1/html/ch08s02s10.html
 orl_columns = (('FIPS', 'str', True, None),
@@ -262,8 +240,8 @@ ff10_hourly_future_columns = (('COUNTRY', 'str', True, None),
                  
 pusp_info_file_columns = (
                        ('ertac_region', 'str', True, None),
-                       ('ertac_fuel_unit_type_bin', 'str', True, fuel_set),
-                       ('state', 'str', True, state_set),
+                       ('ertac_fuel_unit_type_bin', 'str', True, ertac_tables.fuel_set),
+                       ('state', 'str', True, ertac_tables.state_set),
                        ('offline_start_date', 'str', False, None),
                        ('ORIS_FACILITY_CODE', 'str', True, None),
                        ('ORIS_BOILER_ID', 'str', True, None),
@@ -291,8 +269,8 @@ pusp_info_file_columns = (
                        ('COMMENTS', 'str', False, None))
 
 additional_variables_columns = (
-                       ('state', 'str', True, state_set),
-                       ('ertac_fuel_unit_type_bin', 'str', True, fuel_set),
+                       ('state', 'str', True, ertac_tables.state_set),
+                       ('ertac_fuel_unit_type_bin', 'str', True, ertac_tables.fuel_set),
                        ('pm25_rate (lbs/mmBtu)', 'float', False, None),
                        ('pm10_rate (lbs/mmBtu)', 'float', False, None),
                        ('co_rate (lbs/mmBtu)', 'float', False, None),
@@ -332,18 +310,18 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_type, logf
 
     """
 
-    ertac_lib.load_csv_into_table(None, os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'states', conn, states_columns, logfile)
+    ertac_lib.load_csv_into_table(None, os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'states', conn, ertac_tables.states_columns, logfile)
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, uaf_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, ertac_tables.uaf_columns, logfile)
     conn.execute("""DELETE FROM calc_updated_uaf WHERE camd_by_hourly_data_type = 'Non-EGU'""")
     if input_type == 'ERTAC':
-        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_columns, logfile)
+        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
     else:
-        ertac_lib.load_csv_into_table('', 'camd_hourly_base.csv', 'camd_hourly_base', conn, camd_columns, logfile)
+        ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile)
         
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile)            
+    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
     ertac_lib.load_csv_into_table('', 'ertac_pusp_info_file.csv', 'ertac_pusp_info_file', conn, pusp_info_file_columns, logfile)
     ertac_lib.load_csv_into_table('', 'ertac_base_year_rates_and_additional_controls.csv', 'ertac_base_year_rates_and_additional_controls', conn, additional_control_emission_columns, logfile)
     ertac_lib.load_csv_into_table('', 'ertac_additional_variables.csv', 'ertac_additional_variables', conn, additional_variables_columns, logfile)
@@ -481,11 +459,11 @@ def convert_camd_to_hdf(conn, logfile):
             so2_rate,
             nox_rate,
             nox_mass)
-        SELECT cuuaf.ertac_region,
-            cuuaf.ertac_fuel_unit_type_bin,
-            cuuaf.state,
-            cuuaf.orispl_code,
-            cuuaf.unitid,
+        SELECT ertac_region,
+            ertac_fuel_unit_type_bin,
+            state,
+            orispl_code,
+            unitid,
             calendar_hour,
             calendar_hour,
             gload,
@@ -494,11 +472,7 @@ def convert_camd_to_hdf(conn, logfile):
             so2_rate,
             nox_rate,
             nox_mass
-        FROM camd_hourly_base hourly
-        
-        JOIN calc_updated_uaf cuuaf
-        ON cuuaf.orispl_code = hourly.orispl_code
-        AND cuuaf.unitid = hourly.unitid
+        FROM calc_hourly_base hourly
         
         JOIN calendar_hours ch
         ON hourly.op_date = ch.op_date
@@ -591,6 +565,7 @@ def process_results(conn, inputvars, logfile):
         
         for (polcode, column) in [['CO', 'co'], ['PM10', 'pm10'], ['PM2_5', 'pm25'], ['VOC', 'voc'], ['NH3', 'nh3']]:    
             if polcode not in inputvars['pollutants']:
+                rate = None
                 for (rate, orispl_code, unitid) in conn.execute("""SELECT base_year_rate, eac.orispl_code, eac.unitid FROM ertac_base_year_rates_and_additional_controls eac INNER JOIN fy_emission_rates fyer ON eac.orispl_code = fyer.orispl_code AND eac.unitid = fyer.unitid WHERE pollutant_code = ? """, [polcode]).fetchall():
                     conn.execute("""UPDATE fy_emission_rates SET """+column+"""_rate = ? WHERE orispl_code = ? AND unitid = ?""", [rate, orispl_code, unitid]) 
                 
@@ -599,8 +574,8 @@ def process_results(conn, inputvars, logfile):
                         rate = future_rate
                     else:
                         if future_control is not None:
-                            (rate) = conn.execute("""SELECT """+column+"""_rate FROM fy_emission_rates WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid]).fetchone()
-                            if rate:
+                            (rate,) = conn.execute("""SELECT """+column+"""_rate FROM fy_emission_rates WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid]).fetchone()
+                            if rate is not None:
                                 rate = rate * (1.0 - future_control / 100.0)
                     if rate:
                         conn.execute("""UPDATE fy_emission_rates SET """+column+"""_rate = ? WHERE orispl_code = ? AND unitid = ?""", [rate, orispl_code, unitid])
@@ -1191,7 +1166,7 @@ def main(argv=None):
         elif opt in ("--state"):
             state_clean = True  
             for state in arg.split(","):
-                if state.upper() not in state_set:
+                if state.upper() not in ertac_tables.state_set:
                     state_clean = False
                     print "State Not Valid: Defaulting To No Selection"
             if state_clean:
@@ -1289,6 +1264,8 @@ def main(argv=None):
     (inputvars['base_year'], inputvars['future_year'], ozone_start, ozone_end) = dbconn.execute("""SELECT DISTINCT
     base_year, future_year, ozone_start_date, ozone_end_date
     FROM calc_input_variables""").fetchone()
+    if inputvars['input_type'] == 'CAMD':
+	inputvars['future_year'] = inputvars['base_year']
     ozone_start_base   = ertac_lib.convert_ozone_date(ozone_start, inputvars['base_year'])
     ozone_end_base     = ertac_lib.convert_ozone_date(ozone_end, inputvars['base_year'])
     ozone_start_future = ertac_lib.convert_ozone_date(ozone_start, inputvars['future_year'])
