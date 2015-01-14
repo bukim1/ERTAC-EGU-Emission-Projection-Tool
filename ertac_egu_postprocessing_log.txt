@@ -1,0 +1,33 @@
+Program started at Wed Jan 14 14:09:44 2015
+Running under python version: 2.7.3 (default, Apr 10 2012, 23:31:26) [MSC v.1500 32 bit (Intel)]
+Using sqlite3 module version: 2.6.0
+Linked against sqlite3 database library version: 3.6.21
+Model code versions:
+  ertac_postprocess.py: Wed Nov 12 09:04:36 2014
+  ertac_lib.py: Tue Mar 04 12:58:11 2014
+  ertac_tables.py: Tue Mar 04 12:58:11 2014
+  ertac_reports.py: Tue Mar 04 12:58:11 2014
+  create_preprocessor_output_tables.sql: Tue Mar 04 12:58:11 2014
+  create_projection_output_tables.sql: Tue Mar 04 12:58:11 2014
+Creating database tables in memory.
+Loading intermediate data:
+
+Loading input data from file: .\states.csv
+File: .\states.csv; read 57 lines, stored 57 data rows in table: states
+
+File: calc_hourly_base.csv -- Could not be read.
+
+File: calc_updated_uaf.csv -- Could not be read.
+
+File: calc_input_variables.csv -- Could not be read.
+
+File: calc_unit_hierarchy.csv -- Could not be read.
+
+File: generic_units_created.csv -- Could not be read.
+
+File: hourly_diagnostic_file.csv -- Could not be read.
+
+File: calc_growth_rates.csv -- Could not be read.
+
+File: calc_generation_parms.csv -- Could not be read.
+Finished loading intermediate data.
