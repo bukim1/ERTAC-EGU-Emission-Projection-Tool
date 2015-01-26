@@ -607,7 +607,7 @@ def process_results(conn, inputvars, logfile):
                             
         FROM hourly_diagnostic_file hdf
         
-        LEFT JOIN fy_emission_rates fyer
+        INNER JOIN fy_emission_rates fyer
         
         ON hdf.orispl_code = fyer.orispl_code
         AND hdf.unitid = fyer.unitid
@@ -635,7 +635,7 @@ def process_results(conn, inputvars, logfile):
                 WHERE (cuuaf.offline_start_date >= ? OR cuuaf.offline_start_date is NULL)
                 AND cuuaf.state = ? 
                 AND cuuaf.ertac_fuel_unit_type_bin = ?"""
-                
+
         for (statefips, countyfips, plantid, pointid, stackid, segment, orispl_code, unitid, region, camd_by_hourly_data_type, tz, scc, lat, lon) in conn.execute(query + where, [str(inputvars['future_year']) + '-01-01', state, fuel_unit_type_bin] + inputs).fetchall():
             if not tz:
                 result = conn.execute("""SELECT eauaf.time_zone 
@@ -730,6 +730,7 @@ def process_results(conn, inputvars, logfile):
                             AND eauaf.orispl_code = ?
                             AND eauaf.unitid = ?""", [polcode, annual_total, plantid, pointid, stackid, segment, orispl_code, unitid])
                 
+                    #ff10 section
                     else:                    
                         if (plantid is None or pointid is None or stackid is None or segment is None):
                             percentage = 100.0                    
@@ -796,8 +797,8 @@ def process_results(conn, inputvars, logfile):
                                 AND eauaf.unitid = ?""", [polcode, annual_total, inputvars['base_year'], plantid, pointid, stackid, segment, orispl_code, unitid])
 
             else:
-                print >> logfile, orispl_code + ", " + unitid + ", " + polcode + "(" + camd_by_hourly_data_type + ") missing vital information for inclusion in orl" 
-        
+                print >> logfile, orispl_code + ", " + unitid + ", " + polcode + "(" + camd_by_hourly_data_type + ") missing vital information for inclusion in smoke file" 
+            
         conn.execute("""DROP TABLE fy_emissions""")
         
         # Save changes
@@ -1106,7 +1107,7 @@ def main(argv=None):
     try:
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
-            "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "orl-files=", "sql-database=", "state=", "ignore-pollutants=", "input-type=", "output-type="])
+            "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "orl-files=", "sql-database=", "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa"])
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -1123,6 +1124,7 @@ def main(argv=None):
     inputvars['pollutants'] = []  
     inputvars['input_type'] = 'ERTAC'
     inputvars['output_type'] = 'FF10'
+    inputvars['run_qa'] = False
     
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -1134,6 +1136,8 @@ def main(argv=None):
             debug_level = "NONE"
         elif opt in ("-v", "--verbose"):
             debug_level = "INFO"
+        elif opt in ("--run-qa"):
+            debug_level = True
         elif opt in ("--input-prefix-pre"):
             input_prefix_pre = arg
         elif opt in ("--input-prefix-proj"):
@@ -1291,7 +1295,8 @@ def main(argv=None):
             convert_camd_to_hdf(dbconn, logfile)
         run_diagnostics(dbconn, inputvars, logfile)
         process_results(dbconn, inputvars, logfile)
-        qa_results(dbconn, inputvars, logfile)
+	if inputvars['run_qa']:
+            qa_results(dbconn, inputvars, logfile)
         
     # Export projection report tables as CSV files.
     logging.info("Writing out reports:")
