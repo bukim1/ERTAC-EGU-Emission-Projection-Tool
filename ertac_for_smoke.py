@@ -79,6 +79,13 @@ Usage: %s [OPTION]...
 """ % progname
 
 time_zones = ['GMT', 'ADT', 'AST', 'EDT', 'EST', 'CDT', 'CST', 'MDT', 'MST', 'PDT', 'PST']
+ppollutants = [['CO', 'co'],
+              ['VOC', 'voc'],
+              ['PM10', 'pm10'],
+              ['PM2_5', 'pm25'],
+              ['7782505', 'cl2'],
+              ['7647010', 'hcl'],
+              ['NH3', 'nh3']]
 
 #table layout based on http://www.smoke-model.org/version3.1/html/ch08s02s10.html
 fy_emission_rate_columns = (
@@ -90,7 +97,9 @@ fy_emission_rate_columns = (
 ('pm10_rate (lbs/mmBtu)', 'float', False, None),
 ('co_rate (lbs/mmBtu)', 'float', False, None),
 ('voc_rate (lbs/mmBtu)', 'float', False, None),
-('nh3_rate (lbs/mmBtu)', 'float', False, None))
+('nh3_rate (lbs/mmBtu)', 'float', False, None),
+('cl2_rate (lbs/mmBtu)', 'float', False, None),
+('hcl_rate (lbs/mmBtu)', 'float', False, None))
 
 orl_columns = (('FIPS', 'str', True, None),
                        ('PLANTID', 'str', True, None),
@@ -305,6 +314,7 @@ pusp_info_file_columns = (
                        ('CO_PERCENTAGE', 'float', False, (0.0, 100.0)),
                        ('VOC_PERCENTAGE', 'float', False, (0.0, 100.0)),
                        ('NH3_PERCENTAGE', 'float', False, (0.0, 100.0)),
+                       ('HAP_PERCENTAGE', 'float', False, (0.0, 100.0)),
                        ('SIC', 'int', False, None),
                        ('MACT', 'str', False, None),
                        ('NAICS', 'str', False, None),
@@ -318,6 +328,8 @@ additional_variables_columns = (
                        ('co_rate (lbs/mmBtu)', 'float', False, None),
                        ('voc_rate (lbs/mmBtu)', 'float', False, None),
                        ('nh3_rate (lbs/mmBtu)', 'float', False, None),
+                       ('cl2_rate (lbs/mmBtu)', 'float', False, None),
+                       ('hcl_rate (lbs/mmBtu)', 'float', False, None),
                        ('New Unit SCC', 'str', True, None),
                        ('New Unit STKHGT', 'float', True, None),
                        ('New Unit STKDIAM', 'float', True, None),
@@ -536,8 +548,8 @@ def fix_inputs(conn, inputvars, logfile):
     conn.execute("""DELETE FROM calc_updated_uaf WHERE offline_start_date < ? """, [str(inputvars['future_year']) + '-01-01'])
     conn.execute("""DELETE FROM calc_updated_uaf WHERE online_start_date > ? """, [str(inputvars['future_year']) + '-12-31'])
 
-    conn.execute("""INSERT INTO ertac_pusp_info_file (ertac_region,ertac_fuel_unit_type_bin, state, offline_start_date, orispl_code, unitid, nox_percentage, so2_percentage, pm25_percentage, pm10_percentage, co_percentage, voc_percentage, nh3_percentage)
-                    SELECT calc_updated_uaf.ertac_region, calc_updated_uaf.ertac_fuel_unit_type_bin, calc_updated_uaf.state, calc_updated_uaf.offline_start_date, calc_updated_uaf.orispl_code, calc_updated_uaf.unitid, 100,100,100,100,100,100, 100
+    conn.execute("""INSERT INTO ertac_pusp_info_file (ertac_region,ertac_fuel_unit_type_bin, state, offline_start_date, orispl_code, unitid, nox_percentage, so2_percentage, pm25_percentage, pm10_percentage, co_percentage, voc_percentage, nh3_percentage, hap_percentage)
+                    SELECT calc_updated_uaf.ertac_region, calc_updated_uaf.ertac_fuel_unit_type_bin, calc_updated_uaf.state, calc_updated_uaf.offline_start_date, calc_updated_uaf.orispl_code, calc_updated_uaf.unitid, 100,100,100,100,100,100, 100, 100
                     FROM calc_updated_uaf 
                     LEFT JOIN  ertac_pusp_info_file
                     ON ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
@@ -611,17 +623,16 @@ def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
     
     logging.info("  Loading Default Emission Rates")
     print >> logfile, "  Loading Default Emission Rates"
-    conn.execute("""INSERT INTO fy_emission_rates(ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, pm25_rate, pm10_rate, co_rate, voc_rate, nh3_rate)
+    conn.execute("""INSERT INTO fy_emission_rates(ertac_region, 
+        ertac_fuel_unit_type_bin, 
+        orispl_code, 
+        unitid, 
+        """+", ".join([ p[1]+'_rate' for p in ppollutants])+""")
         SELECT  cuuaf.ertac_region, 
                 cuuaf.ertac_fuel_unit_type_bin, 
                 cuuaf.orispl_code, 
-                cuuaf.unitid, 
-                eav.pm25_rate,
-                eav.pm10_rate,
-                eav.co_rate,
-                eav.voc_rate,
-                eav.nh3_rate
-                            
+                cuuaf.unitid,
+                """+", ".join([ 'eav.'+p[1]+'_rate' for p in ppollutants])+"""
         FROM calc_updated_uaf cuuaf
         
         LEFT JOIN ertac_additional_variables eav
@@ -633,7 +644,7 @@ def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
     logging.info("  Processing Unit Level Emission Rates")
     print >> logfile, "  Processing Unit Level Emission Rates"
         
-    for (polcode, column) in [['CO', 'co'], ['PM10', 'pm10'], ['PM2_5', 'pm25'], ['VOC', 'voc'], ['NH3', 'nh3']]:    
+    for (polcode, column) in ppollutants:    
         if polcode not in inputvars['pollutants']:
             for (rate, future_rate, future_control, orispl_code, unitid) in conn.execute("""SELECT base_year_rate, emission_rate, control_efficiency, eac.orispl_code, eac.unitid FROM ertac_base_year_rates_and_additional_controls eac INNER JOIN fy_emission_rates fyer ON eac.orispl_code = fyer.orispl_code AND eac.unitid = fyer.unitid WHERE pollutant_code = ? """, [polcode]).fetchall():
                 if future_rate is not None:
@@ -681,16 +692,8 @@ def process_results(conn, inputvars, logfile):
         so2_mass REAL,
         nox_rate REAL,
         nox_mass REAL,
-        pm25_rate REAL,
-        pm25_mass REAL,
-        pm10_rate REAL,
-        pm10_mass REAL,
-        co_rate REAL,
-        co_mass REAL,
-        voc_rate REAL,
-        voc_mass REAL,
-        nh3_rate REAL,
-        nh3_mass REAL,
+        """+", ".join([ p[1]+'_rate REAL' for p in ppollutants])+""",
+        """+", ".join([ p[1]+'_mass REAL' for p in ppollutants])+""",
         PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid),
         UNIQUE (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid));""")    
             
@@ -698,7 +701,19 @@ def process_results(conn, inputvars, logfile):
     
         logging.info("  Calculating Emissions")
         print >> logfile, "  Calculating Emissions"
-        conn.execute("""INSERT INTO fy_emissions(ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, calendar_hour, hierarchy_hour, gload, heat_input, so2_rate, so2_mass, nox_rate, nox_mass, pm25_rate, pm10_rate, co_rate, voc_rate, nh3_rate, pm25_mass, pm10_mass, co_mass, voc_mass, nh3_mass)
+        conn.execute("""INSERT INTO fy_emissions(ertac_region, 
+                ertac_fuel_unit_type_bin, 
+                orispl_code, 
+                unitid, 
+                calendar_hour, 
+                hierarchy_hour, 
+                gload, heat_input, 
+                so2_rate, 
+                so2_mass, 
+                nox_rate, 
+                nox_mass, 
+        """+", ".join([ p[1]+'_rate' for p in ppollutants])+""",
+        """+", ".join([ p[1]+'_mass' for p in ppollutants])+""")
         SELECT  hdf.ertac_region, 
                 hdf.ertac_fuel_unit_type_bin, 
                 hdf.orispl_code, 
@@ -707,20 +722,12 @@ def process_results(conn, inputvars, logfile):
                 hierarchy_hour, 
                 gload, 
                 heat_input, 
-                so2_rate/2000.0, 
-                so2_mass/2000.0, 
-                nox_rate/2000.0, 
+                so2_rate/2000.0,
+                so2_mass/2000.0,
+                nox_rate/2000.0,
                 nox_mass/2000.0,
-                fyer.pm25_rate/2000.0,
-                fyer.pm10_rate/2000.0,
-                fyer.co_rate/2000.0,
-                fyer.voc_rate/2000.0,
-                fyer.nh3_rate/2000.0,
-                fyer.pm25_rate * heat_input/2000.0,
-                fyer.pm10_rate * heat_input/2000.0,
-                fyer.co_rate * heat_input/2000.0,
-                fyer.voc_rate * heat_input/2000.0,
-                fyer.nh3_rate * heat_input/2000.0
+        """+", ".join([ 'fyer.'+p[1]+'_rate/2000.0' for p in ppollutants])+""",
+        """+", ".join([ 'fyer.'+p[1]+'_rate * heat_input/2000.0' for p in ppollutants])+"""
                             
         FROM hourly_diagnostic_file hdf
         
@@ -749,10 +756,19 @@ def process_results(conn, inputvars, logfile):
                 AND cuuaf.ertac_fuel_unit_type_bin = ?"""
 
         for (statefips, countyfips, plantid, pointid, stackid, segment, orispl_code, unitid, region, camd_by_hourly_data_type, tz, scc, lat, lon) in conn.execute(query + where, [state, fuel_unit_type_bin] + inputs).fetchall():                     
-            for (polcode, column) in [['NOX', 'nox'], ['SO2', 'so2'], ['CO', 'co'], ['PM10', 'pm10'], ['PM2_5', 'pm25'], ['VOC', 'voc'], ['NH3', 'nh3']]:           
+            for (polcode, column) in ppollutants:           
                 if inputvars['output_type'] == 'FF10':
                     plant_info = ['US', statefips + countyfips, plantid, pointid, stackid, segment, scc, polcode, time.strftime("%Y%m%d"), '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                    (percentage, ) = conn.execute("""SELECT COALESCE("""+column+"""_percentage, 0) 
+                    if polcode.isdigit():
+                        (percentage, ) = conn.execute("""SELECT COALESCE(hap_percentage, 0) 
+                                        FROM ertac_pusp_info_file eauaf
+                                        WHERE eauaf.plantid = ?
+                                        AND eauaf.pointid = ?
+                                        AND eauaf.stackid = ?
+                                        AND eauaf.segment = ?""", [plantid, pointid, stackid, segment]).fetchone()
+
+                    else:
+                        (percentage, ) = conn.execute("""SELECT COALESCE("""+column+"""_percentage, 0) 
                                         FROM ertac_pusp_info_file eauaf
                                         WHERE eauaf.plantid = ?
                                         AND eauaf.pointid = ?
@@ -904,15 +920,16 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             for unit in result:
                 print >> logfile, "  " + ertac_lib.nice_str(unit)
                 
-    for (polcode, column) in [['NOX', 'nox'], ['SO2', 'so2'], ['CO', 'co'], ['PM10', 'pm10'], ['PM2_5', 'pm25'], ['VOC', 'voc'], ['NH3', 'nh3']]:    
-        if polcode not in inputvars['pollutants']:    
-            result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING SUM(COALESCE("""+column+"""_percentage,0)) != 100.0  ORDER BY state""").fetchall()
-            if len(result) > 0:
-                print >> logfile, "Warning:", len(result), "facility/units in had a percentage distribution for "+polcode+" emissions that did not sum to 100:"
-                for unit in result:
-                    if unit[0] != 100:
-                        result2 = conn.execute("""SELECT orispl_code, unitid, state, ? FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
-                        print >> logfile, "  " + ertac_lib.nice_str(result2)  
+    for (polcode, column) in ppollutants:    
+        if polcode not in inputvars['pollutants']:   
+            if not polcode.isdigit(): 
+                result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING SUM(COALESCE("""+column+"""_percentage,0)) != 100.0  ORDER BY state""").fetchall()
+                if len(result) > 0:
+                    print >> logfile, "Warning:", len(result), "facility/units in had a percentage distribution for "+polcode+" emissions that did not sum to 100:"
+                    for unit in result:
+                        if unit[0] != 100:
+                            result2 = conn.execute("""SELECT orispl_code, unitid, state, ? FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
+                            print >> logfile, "  " + ertac_lib.nice_str(result2)  
 
 def qa_results(conn, inputvars, logfile):
     logging.info("Running QA Tests")   
@@ -1209,7 +1226,7 @@ def main(argv=None):
         elif opt in ("--ignore-pollutants"):
             pol_clean = True
             for pol in arg.split(","):
-                if pol.upper() not in ["CO", "VOC", "PM_10", "PM_25", "NH3"]:
+                if pol.upper() not in [p[0] for p in ppollutants]:
                     pol_clean = False
                     print "Pollutant Not Valid: Defaulting To None Ignored"
                 else:
