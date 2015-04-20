@@ -10,7 +10,7 @@
 
 import sys
 try:
-    import getopt, logging, os, time, re, csv, datetime, StringIO
+    import getopt, logging, os, time, re, csv, datetime, StringIO, httplib
 except ImportError:
     print >> sys.stderr, "Fatal error: can't import all required modules."
     print >> sys.stderr, "Run python -V to find your Python version."
@@ -437,7 +437,7 @@ def export_table_to_csv_with_smoke_header(table_name, prefix, basic_csv_file, co
             cf.write(hr+"\n")
         cf.write(",".join(['"'+col[0]+'"' for col in cols])+"\n")  
         si = StringIO.StringIO()
-        cw = csv.writer(cf, quoting=csv.QUOTE_MINIMAL)    
+        cw = csv.writer(cf, quoting=csv.QUOTE_NONNUMERIC)    
         for row in dbcur:
             cw.writerow(row)
             row_count += 1
@@ -601,7 +601,7 @@ def fix_inputs(conn, inputvars, logfile):
             geonames_result = geonames_client.find_timezone({'lat': results[0], 'lng': results[1]})
             tz = geonames_result['timezoneId']
             print >> logfile, "  Time zone looked up for "+results[2]+"/"+results[3]+" found to be " + tz
-        except (geonames.GeonamesError, KeyError), err:
+        except (geonames.GeonamesError, KeyError, httplib.BadStatusLine), err:
             logging.error('Error getting timezone for %s, %s: %s' % (results[2], results[3], err))
             tz = "-99"
         conn.execute("""UPDATE ertac_pusp_info_file SET time_zone = ? WHERE orispl_code = ? AND unitid = ?""",[tz, results[2], results[3]])
@@ -644,7 +644,7 @@ def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
     logging.info("  Processing Unit Level Emission Rates")
     print >> logfile, "  Processing Unit Level Emission Rates"
         
-    for (polcode, column) in ppollutants:    
+    for (polcode, column) in [['NOX', 'nox'], ['SO2', 'so2']]+ppollutants:    
         if polcode not in inputvars['pollutants']:
             for (rate, future_rate, future_control, orispl_code, unitid) in conn.execute("""SELECT base_year_rate, emission_rate, control_efficiency, eac.orispl_code, eac.unitid FROM ertac_base_year_rates_and_additional_controls eac INNER JOIN fy_emission_rates fyer ON eac.orispl_code = fyer.orispl_code AND eac.unitid = fyer.unitid WHERE pollutant_code = ? """, [polcode]).fetchall():
                 if future_rate is not None:
@@ -756,7 +756,7 @@ def process_results(conn, inputvars, logfile):
                 AND cuuaf.ertac_fuel_unit_type_bin = ?"""
 
         for (statefips, countyfips, plantid, pointid, stackid, segment, orispl_code, unitid, region, camd_by_hourly_data_type, tz, scc, lat, lon) in conn.execute(query + where, [state, fuel_unit_type_bin] + inputs).fetchall():                     
-            for (polcode, column) in ppollutants:           
+            for (polcode, column) in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants:           
                 if inputvars['output_type'] == 'FF10':
                     plant_info = ['US', statefips + countyfips, plantid, pointid, stackid, segment, scc, polcode, time.strftime("%Y%m%d"), '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
                     if polcode.isdigit():
@@ -920,7 +920,7 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             for unit in result:
                 print >> logfile, "  " + ertac_lib.nice_str(unit)
                 
-    for (polcode, column) in ppollutants:    
+    for (polcode, column) in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants:    
         if polcode not in inputvars['pollutants']:   
             if not polcode.isdigit(): 
                 result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING SUM(COALESCE("""+column+"""_percentage,0)) != 100.0  ORDER BY state""").fetchall()
@@ -1226,7 +1226,7 @@ def main(argv=None):
         elif opt in ("--ignore-pollutants"):
             pol_clean = True
             for pol in arg.split(","):
-                if pol.upper() not in [p[0] for p in ppollutants]:
+                if pol.upper() not in [p[0] for p in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants]:
                     pol_clean = False
                     print "Pollutant Not Valid: Defaulting To None Ignored"
                 else:
