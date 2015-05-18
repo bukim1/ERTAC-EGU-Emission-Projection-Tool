@@ -172,7 +172,7 @@ ff10_columns = (('country_cd', 'str', True, None),
                        ('current_cost', 'real', False, None),                     
                        ('cumulative_cost', 'real', False, None),                 
                        ('projection_factor', 'real', False, None),                 
-                       ('submitter_fac_id', 'str', False, None),                        
+                       ('submitter_id', 'str', False, None),                        
                        ('calc_method', 'int', False, None),
                        ('data_set_id', 'int', False, None),                 
                        ('facil_category_code', 'str', False, None),                        
@@ -180,7 +180,7 @@ ff10_columns = (('country_cd', 'str', True, None),
                        ('oris_boiler_id', 'str', True, None),
                        ('ipm_yn', 'str', False, ['Y','N']),
                        ('calc_year', 'str', False, None),
-                       ('date_updated', 'str', True, None),
+                       ('date_updated', 'int', True, None),
                        ('fug_height', 'float', False, None),
                        ('fug_width_ydim', 'float', False, None),
                        ('fug_length_xdim', 'float', False, None),
@@ -208,7 +208,7 @@ ff10_columns = (('country_cd', 'str', True, None),
                        ('jul_pctred', 'float', False, None),
                        ('aug_pctred', 'float', False, None),
                        ('sep_pctred', 'float', False, None),
-                       ('pct_pctred', 'float', False, None),
+                       ('oct_pctred', 'float', False, None),
                        ('nov_pctred', 'float', False, None),
                        ('dec_pctred', 'float', False, None),
                        ('comment', 'str', False, None))
@@ -435,11 +435,13 @@ def export_table_to_csv_with_smoke_header(table_name, prefix, basic_csv_file, co
     else:
         for hr in header:                    
             cf.write(hr+"\n")
-        cf.write(",".join(['"'+col[0]+'"' for col in cols])+"\n")  
-        si = StringIO.StringIO()
-        cw = csv.writer(cf, quoting=csv.QUOTE_NONNUMERIC)    
+        cf.write(",".join(['"'+col[0]+'"' for col in cols])+"\n")
         for row in dbcur:
+            output = StringIO.StringIO()  
+            cw = csv.writer(output, quoting=csv.QUOTE_NONNUMERIC) 
             cw.writerow(row)
+            cf.write(re.sub(',""',',',output.getvalue()))
+            output.close()
             row_count += 1
 
     print >> logfile, "Wrote out", row_count, "data rows from table: " + table_name + " to file: " + csv_file
@@ -758,7 +760,7 @@ def process_results(conn, inputvars, logfile):
         for (statefips, countyfips, plantid, pointid, stackid, segment, orispl_code, unitid, region, camd_by_hourly_data_type, tz, scc, lat, lon) in conn.execute(query + where, [state, fuel_unit_type_bin] + inputs).fetchall():                     
             for (polcode, column) in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants:           
                 if inputvars['output_type'] == 'FF10':
-                    plant_info = ['US', statefips + countyfips, plantid, pointid, stackid, segment, scc, polcode, time.strftime("%Y%m%d"), '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+                    plant_info = ['US', statefips + countyfips, plantid, pointid, stackid, segment, scc, polcode, int(time.strftime("%Y%m%d")), '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
                     if polcode.isdigit():
                         (percentage, ) = conn.execute("""SELECT COALESCE(hap_percentage, 0) 
                                         FROM ertac_pusp_info_file eauaf
@@ -794,8 +796,8 @@ def process_results(conn, inputvars, logfile):
                             d += 1
                             daily_total = 0                  
         
-                    conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, ann_emis, ann_pct_red, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
-                                SELECT 'US', fips_code, plantid, pointid, stackid, segment, plantid, pointid, stackid, segment, scc, ?, ?, '', facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
+                    conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, ann_emis, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
+                                SELECT 'US', fips_code, plantid, pointid, stackid, segment, plantid, pointid, stackid, segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
                                 FROM calc_updated_uaf cuuaf
                                 LEFT JOIN ertac_pusp_info_file eauaf
                                 
@@ -809,7 +811,7 @@ def process_results(conn, inputvars, logfile):
                                 AND eauaf.stackid = ?
                                 AND eauaf.segment = ?
                                 AND eauaf.orispl_code = ?
-                                AND eauaf.unitid = ?""", [polcode, annual_total, inputvars['base_year'], time.strftime("%Y%m%d"), plantid, pointid, stackid, segment, orispl_code, unitid])
+                                AND eauaf.unitid = ?""", [polcode, annual_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid])
 
                 #orl section
                 else:                    
@@ -1230,7 +1232,7 @@ def main(argv=None):
                     pol_clean = False
                     print "Pollutant Not Valid: Defaulting To None Ignored"
                 else:
-                    inputvars['pollutants'].push(pol.upper())
+                    inputvars['pollutants'].append(pol.upper())
             if not pol_clean:
                 inputvars['pollutants'] = []
         elif opt in ("--state"):
