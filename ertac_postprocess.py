@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.01"
+VERSION = "1.02"
 
 import sys
 try:
@@ -120,6 +120,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('Generation Capacity (MW)', 'float', False, None),
                        ('Nameplate Capacity (MW)', 'float', False, None),
                        ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -212,12 +213,17 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
 
     """
 
+    #jmj fails when a necessary file is not load 150413
     ertac_lib.load_csv_into_table(None, os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'states', conn, states_columns, logfile)
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, uaf_columns, logfile)
+    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
+        sys.exit(1)
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, uaf_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"
+        sys.exit(1)  
     (where, inputs) = build_where(conn, 'cuuaf.', inputvars, True, True)
    
     query= """SELECT chb.orispl_code, chb.unitid FROM calc_hourly_base chb
@@ -230,11 +236,16 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     #for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
     #    conn.execute("""DELETE FROM calc_hourly_base WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
       
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile)
+    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_input_variables"
+        sys.exit(1) 
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_unit_hierarchy"
+        sys.exit(1)
     ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile)
-   
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file hourly_diagnostic_file"
+        sys.exit(1)
     query= """SELECT hdf.orispl_code, hdf.unitid FROM hourly_diagnostic_file hdf
     LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
     ON hdf.orispl_code = cuuaf.orispl_code
@@ -578,6 +589,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             generation_capacity, 
             nameplate_capacity,
             fy_op_hours_max, 
+            fy_op_hours, 
             by_uf, 
             fy_uf, 
             by_gload, 
@@ -624,6 +636,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             1000 * max_ertac_hi_hourly_summer / ertac_heat_rate, 
             cuuaf.nameplate_capacity,
             sum(hourly_hi_limit='Y'), 
+            sum(COALESCE(fy_heat_input,0)>0), 
             sum(COALESCE(by_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
             sum(COALESCE(fy_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
             sum(COALESCE(by_gload,0)), 
@@ -992,7 +1005,7 @@ def main(argv=None):
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
     print >> logfile, "Model code versions:"
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py', 'ertac_reports.py',
-                      'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql']:
+                      'create_postprocessing_tables.sql']:
         print >> logfile, "  " + file_name + ": " + time.ctime(os.path.getmtime(os.path.join(sys.path[0], file_name)))
 
     # Workspace SQL DB (1) in memory or (2) as a file

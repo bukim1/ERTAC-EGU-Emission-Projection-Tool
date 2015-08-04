@@ -33,6 +33,7 @@ co2_rate_flag TEXT,
 heat_input REAL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, op_date, op_hour, orispl_code, unitid));
 
+
 -- CALC_UPDATED_UAF, p.43, same format as ERTAC_INITIAL_UAF in input.
 DROP TABLE IF EXISTS calc_updated_uaf;
 CREATE TABLE calc_updated_uaf
@@ -218,6 +219,11 @@ new_unit_stkflow REAL,
 new_unit_stkvel REAL,
 comments TEXT,
 PRIMARY KEY (state, ertac_fuel_unit_type_bin));
+
+DROP TABLE IF EXISTS ertac_rpo_listing;
+CREATE TABLE ertac_rpo_listing
+(rpo TEXT NOT NULL COLLATE NOCASE,
+states TEXT NOT NULL COLLATE NOCASE);
 
 DROP TABLE IF EXISTS hourly_diagnostic_file;
 CREATE TABLE hourly_diagnostic_file
