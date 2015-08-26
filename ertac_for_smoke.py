@@ -1387,7 +1387,7 @@ def main(argv=None):
     
     rpos = dbconn.execute("""SELECT rpo, states FROM ertac_rpo_listing""").fetchall()
     if len(rpos) == 0:
-        rpos= ['CLI', FALSE]
+        rpos= ['CLI', False]
    
     for rpo in rpos: 
         if rpo[1]:
@@ -1408,7 +1408,7 @@ def main(argv=None):
             months = [-1]
             
         for month in months:
-            if months != -1:
+            if month != -1:
                 if not os.path.exists('forsmokemonthly'):
                     os.makedirs('forsmokemonthly')
         
@@ -1430,14 +1430,14 @@ def main(argv=None):
                 if inputvars['input_type'] == 'CAMD':
                     convert_camd_to_hdf(dbconn, logfile)
                 run_diagnostics(dbconn, inputvars, logfile)
-                process_results(dbconn, inputvars, (not inputvars['monthly']), logfile)
+                process_results(dbconn, inputvars, logfile)
             
             if inputvars['run_qa']:
                 qa_results(dbconn, inputvars, logfile)
                 
             # Export projection report tables as CSV files.
             logging.info("Writing out reports:")
-            write_final_data(dbconn, inputvars, new_output_prefix, logfile)
+            write_final_data(dbconn, inputvars, new_output_prefix, (not inputvars['monthly']), logfile)
         
     logging.info("Finished writing reports.")
     dbconn.close()
