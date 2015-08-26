@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# ertac_postprocess.py
+# ertac_for_smoke.py
 
 """ERTAC EGU post processing"""
 
@@ -374,16 +374,17 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_type, logf
     # to store that data in the database tables.
     ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, ertac_tables.uaf_columns, logfile)
     conn.execute("""DELETE FROM calc_updated_uaf WHERE camd_by_hourly_data_type = 'Non-EGU'""")
-    if input_type == 'ERTAC':
-        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
-    else:
-        ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile)
-        
     ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
     ertac_lib.load_csv_into_table('', 'ertac_pusp_info_file.csv', 'ertac_pusp_info_file', conn, pusp_info_file_columns, logfile)
     ertac_lib.load_csv_into_table('', 'ertac_base_year_rates_and_additional_controls.csv', 'ertac_base_year_rates_and_additional_controls', conn, additional_control_emission_columns, logfile)
     ertac_lib.load_csv_into_table('', 'ertac_additional_variables.csv', 'ertac_additional_variables', conn, additional_variables_columns, logfile)
     ertac_lib.load_csv_into_table('', 'ertac_rpo_listing.csv', 'ertac_rpo_listing', conn, rpo_columns, logfile)
+    if input_type == 'ERTAC':
+        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
+    else:
+        ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile)
+        
+
 
 
 
