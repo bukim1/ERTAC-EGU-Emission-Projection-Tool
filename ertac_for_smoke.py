@@ -304,6 +304,10 @@ pusp_info_file_columns = (
                        ('POINTID', 'str', True, None),
                        ('STACKID', 'str', False, None),
                        ('SEGMENT', 'str', False, None),
+                       ('AGY_PLANTID', 'str', False, None),
+                       ('AGY_POINTID', 'str', False, None),
+                       ('AGY_STACKID', 'str', False, None),
+                       ('AGY_SEGMENT', 'str', False, None),
                        ('STKHGT', 'float', False, None),
                        ('STKDIAM', 'float', False, None),
                        ('STKTEMP', 'float', False, None),
@@ -568,14 +572,14 @@ def fix_inputs(conn, inputvars, logfile):
                     WHERE ertac_pusp_info_file.orispl_code IS NULL""")
 
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET plantid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.unitid
+                    SET plantid = agy_plantid =   (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.unitid
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
                     AND ertac_pusp_info_file.ertac_region = calc_updated_uaf.ertac_region
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin) WHERE plantid is null""")
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET pointid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.orispl_code
+                    SET pointid =  agy_pointid = (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.orispl_code
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
@@ -583,8 +587,10 @@ def fix_inputs(conn, inputvars, logfile):
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin) WHERE pointid is null""")
  
     #fix ones with missing stack information
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET stackid = rowid WHERE stackid IS NULL""")
     
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
     conn.execute("""UPDATE ertac_pusp_info_file SET segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
     for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel', 'scc']: 
         conn.execute("""UPDATE ertac_pusp_info_file
@@ -820,7 +826,7 @@ def process_results(conn, inputvars, logfile):
                                 daily_total = 0                  
             
                         conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, ann_emis, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
-                                    SELECT 'US', fips_code, plantid, pointid, stackid, segment, plantid, pointid, stackid, segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
+                                    SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
                                     FROM calc_updated_uaf cuuaf
                                     LEFT JOIN ertac_pusp_info_file eauaf
                                     
