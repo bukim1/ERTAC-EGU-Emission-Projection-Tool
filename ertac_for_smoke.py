@@ -2,11 +2,13 @@
 
 # ertac_for_smoke.py
 
-"""ERTAC EGU post processing"""
+"""ERTAC EGU SMOKE Converter"""
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
+
+VERSION = "1.02"
 
 import sys
 try:
@@ -65,16 +67,17 @@ def usage(progname):
 Usage: %s [OPTION]...
 
   -h, --help        print this message.
-
   -d, --debug       log extended debugging information.
   -q, --quiet       quiet operation (no status messages).
   -v, --verbose     verbose status messages (default).
-  --run-integrity.                      run a check for debugging to make sure gload totals match by region, fuel bin, and in total
+  --run-qa                              run additional calculations to qa the output
   --sql-database=existing database.     use sql database at location rather than loading inputs
   --input-prefix-pre=prefix.            prefix used in preprocessor
   --input-prefix-proj=prefix.           prefix used in projection
-  --ignore-pollutants=pollutants        comma separated list of pollutants to ignore
-  --state=state                         limit resutls to state or comma separate list of states
+  --ignore-pollutants=pollutants.       comma separated list of pollutants to ignore
+  --state=states.                       limit resutls to state or comma separate list of states
+  --input-type=[ERTAC|CAMD].            either "ERTAC" to process a hourly_diagnostic_file or "CAMD" to process a calc_hourly_base, defaults to ERTAC
+  --monthly                             produce 2 output files for each month rather than 2 annual files
   -o prefix, --output-prefix=prefix.    output prefix for postprocessor results
 """ % progname
 
@@ -558,7 +561,7 @@ def fix_inputs(conn, inputvars, logfile):
     #fix uaf and pusp
     logging.info("  Fixing Missing Information in Inputs")         
     print >> logfile, "  Fixing Missing Information in Inputs"
-    conn.execute("""DELETE FROM calc_updated_uaf WHERE offline_start_date < ? """, [str(inputvars['future_year']) + '-01-01'])
+    conn.execute("""DELETE FROM calc_updated_uaf WHERE offline_start_date <= ? """, [str(inputvars['future_year']) + '-01-01'])
     conn.execute("""DELETE FROM calc_updated_uaf WHERE online_start_date > ? """, [str(inputvars['future_year']) + '-12-31'])
 
     conn.execute("""INSERT INTO ertac_pusp_info_file (ertac_region,ertac_fuel_unit_type_bin, state, offline_start_date, orispl_code, unitid, nox_percentage, so2_percentage, pm25_percentage, pm10_percentage, co_percentage, voc_percentage, nh3_percentage, hap_percentage)
@@ -1310,6 +1313,7 @@ def main(argv=None):
 
     # Identify versions of Python and SQLite library, and record in log file.
     logging.info("Program started at " + time.asctime())
+    logging.info("ERTAC EGU version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
