@@ -362,6 +362,7 @@ additional_control_emission_columns = (('ORISPL_CODE', 'str', True, None),
                             ('Control Description', 'str', False, None),
                             ('Submitter email', 'str', False, None))
 
+month_names = ['jan', 'feb', 'mar' ,'apr' , 'may' ,'jun' , 'jul' , 'aug' ,'sep' ,  'oct','nov','dec' ]
 
 def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_type, logfile):
     """Load intermediate ERTAC EGU data from preprocessor for projection.
@@ -575,14 +576,14 @@ def fix_inputs(conn, inputvars, logfile):
                     WHERE ertac_pusp_info_file.orispl_code IS NULL""")
 
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET plantid = agy_plantid =   (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.unitid
+                    SET plantid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.unitid
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
                     AND ertac_pusp_info_file.ertac_region = calc_updated_uaf.ertac_region
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin) WHERE plantid is null""")
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET pointid =  agy_pointid = (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.orispl_code
+                    SET pointid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.orispl_code
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
@@ -590,6 +591,9 @@ def fix_inputs(conn, inputvars, logfile):
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin) WHERE pointid is null""")
  
     #fix ones with missing stack information
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_plantid = plantid WHERE agy_plantid IS NULL""")
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_pointid = pointid WHERE agy_pointid IS NULL""")
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET stackid = rowid WHERE stackid IS NULL""")
     
@@ -689,7 +693,6 @@ def process_results(conn, inputvars, logfile):
 
     """
     
-    conn.execute("""DELETE FROM ff10_future""")
     conn.execute("""DELETE FROM ff10_hourly_future""")
     conn.execute("""DELETE FROM fy_emission_rates""") 
     
@@ -760,16 +763,12 @@ def process_results(conn, inputvars, logfile):
         AND hdf.ertac_region = fyer.ertac_region
         AND hdf.ertac_fuel_unit_type_bin = fyer.ertac_fuel_unit_type_bin"""  
      
-        if 'monthly' in inputvars and 'start_date' in inputvars and 'end_date' in inputvars:
-            query+=" AND hdf.calendar_hour >= ? AND hdf. calendar_hour <= ? "
-            (start_hour,) = conn.execute("""SELECT MIN(calendar_hour)FROM calendar_hours WHERE op_date >= ?""", [inputvars['start_date']]).fetchone()
-            (end_hour,) = conn.execute("""SELECT MAX(calendar_hour) FROM calendar_hours WHERE op_date <= ?""", [inputvars['end_date']]).fetchone()
-            (temp,) = conn.execute("""SELECT count(calendar_hour) FROM calendar_hours""").fetchone()
+        query+=" AND hdf.calendar_hour >= ? AND hdf. calendar_hour <= ? "
+        (start_hour,) = conn.execute("""SELECT MIN(calendar_hour)FROM calendar_hours WHERE op_date >= ?""", [inputvars['start_date']]).fetchone()
+        (end_hour,) = conn.execute("""SELECT MAX(calendar_hour) FROM calendar_hours WHERE op_date <= ?""", [inputvars['end_date']]).fetchone()
+        (temp,) = conn.execute("""SELECT count(calendar_hour) FROM calendar_hours""").fetchone()
 
-            conn.execute(query, [start_hour, end_hour])
-        else:
-            conn.executescript(query)
-        
+        conn.execute(query, [start_hour, end_hour])
             
         logging.info("  Converting Files to SMOKE Ready")         
         print >> logfile, "  Converting Files to SMOKE Ready"
@@ -812,12 +811,12 @@ def process_results(conn, inputvars, logfile):
                         d = 0
                         h = 0
                         daily_total=0
-                        annual_total=0
+                        month_total=0
                             
                         for (heat_input, mass) in conn.execute("""SELECT COALESCE(heat_input,0.0), COALESCE("""+column+"""_mass,0.0) FROM fy_emissions WHERE orispl_code = ? AND unitid = ? ORDER BY calendar_hour """, [orispl_code, unitid]).fetchall():
                             plant_info[h+11]=mass*percentage/100.0
                             daily_total+=plant_info[h+11]
-                            annual_total+=plant_info[h+11]                        
+                            month_total+=plant_info[h+11]                        
                             h+=1 
                             if h == 24:
                                 plant_info[10]=daily_total
@@ -827,24 +826,35 @@ def process_results(conn, inputvars, logfile):
                                 h = 0
                                 d += 1
                                 daily_total = 0                  
-            
-                        conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, ann_emis, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
-                                    SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
-                                    FROM calc_updated_uaf cuuaf
-                                    LEFT JOIN ertac_pusp_info_file eauaf
-                                    
-                                    ON eauaf.orispl_code = cuuaf.orispl_code
-                                    AND eauaf.unitid = cuuaf.unitid
-                                    AND cuuaf.ertac_region = eauaf.ertac_region
-                                    AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
-                                    
-                                    WHERE eauaf.plantid = ?
-                                    AND eauaf.pointid = ?
-                                    AND eauaf.stackid = ?
-                                    AND eauaf.segment = ?
-                                    AND eauaf.orispl_code = ?
-                                    AND eauaf.unitid = ?""", [polcode, annual_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid])
-    
+                        
+                        if inputvars['month'] == 1:
+                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, jan_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
+                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
+                                        FROM calc_updated_uaf cuuaf
+                                        LEFT JOIN ertac_pusp_info_file eauaf
+                                        
+                                        ON eauaf.orispl_code = cuuaf.orispl_code
+                                        AND eauaf.unitid = cuuaf.unitid
+                                        AND cuuaf.ertac_region = eauaf.ertac_region
+                                        AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
+                                        
+                                        WHERE eauaf.plantid = ?
+                                        AND eauaf.pointid = ?
+                                        AND eauaf.stackid = ?
+                                        AND eauaf.segment = ?
+                                        AND eauaf.orispl_code = ?
+                                        AND eauaf.unitid = ?""", [polcode, month_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid])
+                        else:
+                            conn.execute("""UPDATE ff10_future
+                                        SET """+month_names[inputvars['month']-1]+"""_value = ?                
+                                        WHERE 
+                                        cas = ?
+                                        AND plantid = ?
+                                        AND pointid = ?
+                                        AND stackid = ?
+                                        AND segment = ?
+                                        AND orispl_code = ?
+                                        AND unitid = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid])
                     #orl section
                     else:                    
                         plant_info = [statefips, countyfips, plantid, pointid, stackid, segment, polcode, '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,scc]
@@ -1144,7 +1154,7 @@ def make_calendar_hours(base_year, future_year, conn):
     conn.execute("""UPDATE calendar_hours
     SET future_date = REPLACE(op_date, ?, ?)""", (base_year, future_year))
     
-def write_final_data(conn, inputvars, out_prefix, produce_dianostics, logfile):
+def write_final_data(conn, inputvars, out_prefix, produce_dianostics, produce_annual, produce_hourly, logfile):
     """Write out projected ERTAC EGU data reports.
 
     Keyword arguments:
@@ -1164,11 +1174,13 @@ def write_final_data(conn, inputvars, out_prefix, produce_dianostics, logfile):
                   "#DESC     ertacegu@gmail.com", 
                   "#DESC     Emissions, in short tons, from ERTAC (Dropped unused columns after Column 46)", 
                   "#DESC     " + time.strftime("%m/%d/%y")]
-        export_table_to_csv_with_smoke_header('orl_future', out_prefix, 'orl_future.csv', conn, orl_columns, header, logfile)
-        header[0] = "#ORL      POINT"
-        header[6] = "#DESC     Emissions, in short tons, from ERTAC"
+        if produce_annual:
+            export_table_to_csv_with_smoke_header('orl_future', out_prefix, 'orl_future.csv', conn, orl_columns, header, logfile)
+        if produce_hourly:
+            header[0] = "#ORL      POINT"
+            header[6] = "#DESC     Emissions, in short tons, from ERTAC"
         #update the hourly one so its not csv but space
-        export_table_to_csv_with_smoke_header('pt_hourly_future', out_prefix, 'pt_hourly_future.csv', conn, pt_columns, [], logfile, [2,3,15,12,12,12,5,8,3,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,10])
+            export_table_to_csv_with_smoke_header('pt_hourly_future', out_prefix, 'pt_hourly_future.csv', conn, pt_columns, [], logfile, [2,3,15,12,12,12,5,8,3,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,10])
     else:    
         header = ["#FORMAT=FF10_POINT", 
                   "#COUNTRY=US", 
@@ -1178,9 +1190,11 @@ def write_final_data(conn, inputvars, out_prefix, produce_dianostics, logfile):
                   "#DESC     ertacegu@gmail.com", 
                   "#DESC     Emissions, in short tons, from ERTAC", 
                   "#DESC     " + time.strftime("%m/%d/%y")]
-        export_table_to_csv_with_smoke_header('ff10_future', out_prefix, 'ff10_future.csv', conn, ff10_columns, header, logfile)
-        header[0] = "#FORMAT=FF10_HOURLY_POINT"
-        export_table_to_csv_with_smoke_header('ff10_hourly_future', out_prefix, 'ff10_hourly_future.csv', conn, ff10_hourly_future_columns, header, logfile)
+        if produce_annual:
+            export_table_to_csv_with_smoke_header('ff10_future', out_prefix, 'ff10_future.csv', conn, ff10_columns, header, logfile)
+        if produce_hourly:
+            header[0] = "#FORMAT=FF10_HOURLY_POINT"
+            export_table_to_csv_with_smoke_header('ff10_hourly_future', out_prefix, 'ff10_hourly_future.csv', conn, ff10_hourly_future_columns, header, logfile)
         
     if produce_dianostics:
         ertac_lib.export_table_to_csv('fy_emission_rates', out_prefix, 'fy_emission_rate_columns.csv', conn, fy_emission_rate_columns, logfile)
@@ -1411,24 +1425,20 @@ def main(argv=None):
         if 'state' in inputvars:
             logging.info("Proccessing States: "+inputvars['state'] )
             print >> logfile, "Proccessing States: "+inputvars['state']
-        
-        if inputvars['monthly']:
-            months = range(1,13)
-        else:
-            months = [-1]
-            
-        for month in months:
-            if month != -1:
+      
+        for inputvars['month'] in range(1,13):
+            if inputvars['month'] < 10:
+                m = '0'+str(inputvars['month'])
+            else: 
+                m = str(inputvars['month'])
+            inputvars['start_date'] = inputvars['base_year']+"-"+m+"-01"
+            inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']), inputvars['month'])[1])
+                
+            if inputvars['monthly']:
                 if not os.path.exists('forsmokemonthly'):
                     os.makedirs('forsmokemonthly')
-        
-                if month < 10:
-                    m = '0'+str(month)
-                else: 
-                    m = str(month)
-                inputvars['start_date'] = inputvars['base_year']+"-"+m+"-01"
-                inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']), month)[1])
-                new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_month_"+str(month)+"_")
+                new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_month_"+str(inputvars['month'])+"_")
+                new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_")
                 
             if existing_db_file:
                 logging.info("Using the existing summary data for plots and CSV files...")
@@ -1446,9 +1456,14 @@ def main(argv=None):
                 qa_results(dbconn, inputvars, logfile)
                 
             # Export projection report tables as CSV files.
-            logging.info("Writing out reports:")
-            write_final_data(dbconn, inputvars, new_output_prefix, (not inputvars['monthly']), logfile)
-        
+            if inputvars['monthly']:
+                logging.info("Writing out reports:")
+                write_final_data(dbconn, inputvars, new_new_output_prefix, False, False, True, logfile)
+    
+        dbconn.execute("""UPDATE ff10_future SET ann_emis = """ + " + ".join([m+"_value" for m in month_names]))    
+        logging.info("Writing out reports:")
+        write_final_data(dbconn, inputvars, new_output_prefix,False,True,  (not inputvars['monthly']), logfile)
+
     logging.info("Finished writing reports.")
     dbconn.close()
     logging.info("Program ended at " + time.asctime())
