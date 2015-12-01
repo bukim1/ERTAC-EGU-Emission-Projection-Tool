@@ -576,14 +576,14 @@ def fix_inputs(conn, inputvars, logfile):
                     WHERE ertac_pusp_info_file.orispl_code IS NULL""")
 
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET plantid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.unitid
+                    SET plantid =  (SELECT camd_by_hourly_data_type || '_' || calc_updated_uaf.orispl_code
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
                     AND ertac_pusp_info_file.ertac_region = calc_updated_uaf.ertac_region
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin) WHERE plantid is null""")
     conn.execute("""UPDATE ertac_pusp_info_file 
-                    SET pointid =  (SELECT camd_by_hourly_data_type + '_' + calc_updated_uaf.orispl_code
+                    SET pointid =  (SELECT camd_by_hourly_data_type || '_' || calc_updated_uaf.unitid
                     FROM calc_updated_uaf
                     WHERE ertac_pusp_info_file.orispl_code = calc_updated_uaf.orispl_code
                     AND ertac_pusp_info_file.unitid = calc_updated_uaf.unitid
@@ -1221,7 +1221,9 @@ def main(argv=None):
     try:
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
-            "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "orl-files=", "sql-database=", "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly"])
+            "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "orl-files=", 
+            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly"])
+        
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -1259,8 +1261,6 @@ def main(argv=None):
             input_prefix_proj = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
-        elif opt in ("--sql-database"):
-            sql_database = arg
         elif opt in ("--monthly"):
             inputvars['monthly'] = True
         elif opt in ("--output-type"):
@@ -1340,47 +1340,20 @@ def main(argv=None):
                       'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql']:
         print >> logfile, "  " + file_name + ": " + time.ctime(os.path.getmtime(os.path.join(sys.path[0], file_name)))
 
-    # Workspace SQL DB (1) in memory or (2) as a file
-    if sql_database == '':
-        logging.info("Creating database tables in memory.")
-        print >> logfile, "Creating database tables in memory."
-        # The preprocessor output tables are used as the projection inputs.
-        # The projection output tables produce all the reports.
-        dbconn = sqlite3.connect(sql_database)
-        create_for_smoke_tables(dbconn)
-        # Load intermediate CSV data into tables, rejecting any rows that can't be
-        # used.  There should be no invalid data at this stage, unless the
-        # intermediate files were manually changed with erroneous data.
-        logging.info("Loading intermediate data:")
-        print >> logfile, "Loading intermediate data:"
-        load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj,inputvars['input_type'], logfile)
-        logging.info("Finished loading intermediate data.")
-        print >> logfile,"Finished loading intermediate data."
-        existing_db_file = False
-    else:
-        # Check if user specified DB file exists.
-        # If not, create and populate the workspace database.
-        if os.path.isfile(sql_database):
-            logging.info("Found the existing DB:" + sql_database)
-            print >> logfile, "Found the existing DB:" + sql_database
-            dbconn = sqlite3.connect(sql_database)
-            dbconn.text_factory = str
-            existing_db_file = True
-        else:
-            logging.info("Not Found the existing DB, creating a new DB file:" + sql_database)
-            print >> logfile, "Not Found the existing DB, creating a new DB file:" + sql_database
-            dbconn = sqlite3.connect(sql_database)
-            create_for_smoke_tables(dbconn)
-            # Load intermediate CSV data into tables, rejecting any rows that can't be
-            # used.  There should be no invalid data at this stage, unless the
-            # intermediate files were manually changed with erroneous data.
-            logging.info("Loading intermediate data:")
-            print >> logfile, "Loading intermediate data:"
-            load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj, logfile)
-            logging.info("Finished loading intermediate data.")
-            print >> logfile,"Finished loading intermediate data."
-            existing_db_file = False
-
+    logging.info("Creating database tables in memory.")
+    print >> logfile, "Creating database tables in memory."
+    # The preprocessor output tables are used as the projection inputs.
+    # The projection output tables produce all the reports.
+    dbconn = sqlite3.connect(sql_database)
+    create_for_smoke_tables(dbconn)
+    # Load intermediate CSV data into tables, rejecting any rows that can't be
+    # used.  There should be no invalid data at this stage, unless the
+    # intermediate files were manually changed with erroneous data.
+    logging.info("Loading intermediate data:")
+    print >> logfile, "Loading intermediate data:"
+    load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj,inputvars['input_type'], logfile)
+    logging.info("Finished loading intermediate data.")
+    print >> logfile,"Finished loading intermediate data."
 
     if len(inputvars['pollutants']) > 0:
         logging.info("Ignoring Pollutants: "+",".join(inputvars['pollutants']))
@@ -1407,13 +1380,18 @@ def main(argv=None):
     FROM calendar_hours
     WHERE op_date <= ?""", (ozone_end_base,)).fetchone()
 
-    fix_inputs(dbconn, inputvars, logfile)
+    fix_inputs(dbconn, inputvars, logfile)                
+    if inputvars['input_type'] == 'CAMD':
+        convert_camd_to_hdf(dbconn, logfile)
+        run_diagnostics(dbconn, inputvars, logfile)
     
     rpos = dbconn.execute("""SELECT rpo, states FROM ertac_rpo_listing""").fetchall()
     if len(rpos) == 0:
         rpos= ['CLI', False]
    
     for rpo in rpos: 
+        dbconn.execute("""DELETE FROM orl_future""")
+        dbconn.execute("""DELETE FROM ff10_future""")
         if rpo[1]:
             if not os.path.exists('forsmokerpo'):
                 os.makedirs('forsmokerpo')
@@ -1440,17 +1418,11 @@ def main(argv=None):
                 new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_month_"+str(inputvars['month'])+"_")
                 new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_")
                 
-            if existing_db_file:
-                logging.info("Using the existing summary data for plots and CSV files...")
-                print >> logfile, "Using the existing summary data for plots and CSV files..."
-            else:
-                logging.info("Summarizing data...")
-                print >> logfile
-                print >> logfile, "Summarizing data..."
-                if inputvars['input_type'] == 'CAMD':
-                    convert_camd_to_hdf(dbconn, logfile)
-                run_diagnostics(dbconn, inputvars, logfile)
-                process_results(dbconn, inputvars, logfile)
+            logging.info("Summarizing data...")
+            print >> logfile
+            print >> logfile, "Summarizing data..."
+
+            process_results(dbconn, inputvars, logfile)
             
             if inputvars['run_qa']:
                 qa_results(dbconn, inputvars, logfile)
