@@ -261,6 +261,7 @@ DROP TABLE IF EXISTS hourly_regional_activity_summary;
 CREATE TABLE hourly_regional_activity_summary
 (ertac_region TEXT NOT NULL COLLATE NOCASE,
 ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+data_type TEXT COLLATE NOCASE,
 calendar_hour INTEGER NOT NULL,
 hierarchy_hour INTEGER NOT NULL,
 by_gload REAL,
@@ -274,8 +275,8 @@ by_nox_mass REAL,
 fy_nox_mass REAL,
 hour_specific_growth_rate REAL,
 afygr REAL,
-PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, calendar_hour),
-UNIQUE (ertac_region, calendar_hour, ertac_fuel_unit_type_bin));
+PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour),
+UNIQUE (ertac_region, calendar_hour, ertac_fuel_unit_type_bin, data_type));
 
 DROP TABLE IF EXISTS hourly_state_activity_summary;
 CREATE TABLE hourly_state_activity_summary
@@ -298,8 +299,8 @@ CREATE TABLE annual_summary
 (orispl_code TEXT NOT NULL COLLATE NOCASE,
 unitid TEXT NOT NULL COLLATE NOCASE,
 facility_name TEXT COLLATE NOCASE,
-state TEXT NOT NULL COLLATE NOCASE,
-fips_code TEXT NOT NULL COLLATE NOCASE,
+state TEXT COLLATE NOCASE,
+fips_code TEXT COLLATE NOCASE,
 ertac_region TEXT NOT NULL COLLATE NOCASE,
 ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
 by_ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,

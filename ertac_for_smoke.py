@@ -1242,8 +1242,13 @@ def main(argv=None):
     inputvars['input_type'] = 'ERTAC'
     inputvars['output_type'] = 'FF10'
     inputvars['run_qa'] = False
+    argument_list = ''
     
     for opt, arg in opts:
+        argument_list += opt
+        if arg:
+            argument_list += arg
+        argument_list += ", "
         if opt in ("-h", "--help"):
             usage(argv[0])
             return 0
@@ -1331,10 +1336,12 @@ def main(argv=None):
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
+
     print >> logfile, "Program started at " + time.asctime()
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
+    print >> logfile, "Run with arguments" + argument_list
     print >> logfile, "Model code versions:"
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py', 'ertac_reports.py',
                       'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql']:

@@ -81,6 +81,7 @@ hourly_activity_summary_columns = (('ertac region', 'str', True, None),
 
 hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
+                       ('data type', 'str', False, None),
                        ('calendar hour', 'int', True, (0, 8760)),
                        ('hierarchy hour', 'int', True, (0, 8760)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
@@ -218,12 +219,23 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
-        print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
+    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_growth_rates.csv', 'calc_growth_rates', conn, growth_rate_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_generation_parms.csv', 'calc_generation_parms', conn, generation_parms_columns, logfile)
+    
+    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_input_variables"
+        sys.exit(1) 
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_unit_hierarchy"
         sys.exit(1)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
+    
     if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, uaf_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"
         sys.exit(1)  
+    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
+        sys.exit(1)
     (where, inputs) = build_where(conn, 'cuuaf.', inputvars, True, True)
    
     query= """SELECT chb.orispl_code, chb.unitid FROM calc_hourly_base chb
@@ -236,13 +248,6 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     #for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
     #    conn.execute("""DELETE FROM calc_hourly_base WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
       
-    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile):
-        print >> sys.stderr, "Fatal error: could not load necessary file calc_input_variables"
-        sys.exit(1) 
-    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile):
-        print >> sys.stderr, "Fatal error: could not load necessary file calc_unit_hierarchy"
-        sys.exit(1)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
     if not ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file hourly_diagnostic_file"
         sys.exit(1)
@@ -256,8 +261,6 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
         conn.execute("""DELETE FROM hourly_diagnostic_file WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
         
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_growth_rates.csv', 'calc_growth_rates', conn, growth_rate_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_generation_parms.csv', 'calc_generation_parms', conn, generation_parms_columns, logfile)
 
 
 def summarize_hourly_results(conn, inputvars, logfile):
@@ -696,15 +699,15 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""")
  
            
-    conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
-        SELECT ertac_region, fuel_bin, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
+    conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
+        SELECT ertac_region, fuel_bin, data_type, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
     
         FROM
-        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, 0 as op_max, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, hour_specific_growth_rate as hour_specific_growth_rate, afygr as afygr
+        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, 0 as op_max, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, hour_specific_growth_rate as hour_specific_growth_rate, afygr as afygr
         FROM hourly_activity_summary 
         WHERE by_hierarchy_hour IS NOT NULL
         UNION ALL
-        SELECT has.ertac_region, has.ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, (hourly_hi_limit='Y') as op_max, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr
+        SELECT has.ertac_region, has.ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, (hourly_hi_limit='Y') as op_max, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr
         FROM hourly_activity_summary has
 
         JOIN calc_updated_uaf cuuaf
@@ -714,7 +717,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
         AND cuuaf.ertac_fuel_unit_type_bin = has.ertac_fuel_unit_type_bin
         
         WHERE hierarchy_hour IS NOT NULL) 
-        GROUP BY ertac_region,  fuel_bin, calendar_hour, hierarchy_hour""")
+        GROUP BY ertac_region,  fuel_bin, data_type, calendar_hour, hierarchy_hour""")
      
     conn.execute("""INSERT INTO hourly_state_activity_summary(state, ertac_fuel_unit_type_bin, calendar_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass)
         SELECT state, fuel_bin, calendar_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0))    
@@ -914,8 +917,14 @@ def main(argv=None):
     sql_database      = ''
     config_file       = None
     run_integrity     = None
+    argument_list     = ''
 
     for opt, arg in opts:
+        argument_list += opt
+        if arg:
+            argument_list += arg
+        argument_list += ", "
+            
         if opt in ("-h", "--help"):
             usage(argv[0])
             return 0
@@ -999,10 +1008,12 @@ def main(argv=None):
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
+    
     print >> logfile, "Program started at " + time.asctime()
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
+    print >> logfile, "Run with arguments" + argument_list
     print >> logfile, "Model code versions:"
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py', 'ertac_reports.py',
                       'create_postprocessing_tables.sql']:
