@@ -820,7 +820,7 @@ def process_results(conn, inputvars, logfile):
                             h+=1 
                             if h == 24:
                                 plant_info[10]=daily_total
-                                plant_info[9]=(datetime.date(int(inputvars['base_year']),1,1) + datetime.timedelta(d)).strftime('%Y%m%d')                   
+                                plant_info[9]=(datetime.date(int(inputvars['base_year']),inputvars['month'],1) + datetime.timedelta(d)).strftime('%Y%m%d')                   
                                 conn.execute("""INSERT INTO ff10_hourly_future(country, fips, plantid, pointid, stackid, segment, scc, polcode, date_updated, op_date, day_tot, hrval1, hrval2, hrval3, hrval4, hrval5, hrval6, hrval7, hrval8, hrval9, hrval10, hrval11, hrval12, hrval13, hrval14, hrval15, hrval16, hrval17, hrval18, hrval19, hrval20, hrval21, hrval22, hrval23, hrval24)
                                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", plant_info)
                                 h = 0
