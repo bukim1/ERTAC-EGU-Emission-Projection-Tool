@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.02"
+VERSION = "1.02.1"
 
 import sys
 try:
@@ -303,8 +303,8 @@ pusp_info_file_columns = (
                        ('offline_start_date', 'str', False, None),
                        ('ORIS_FACILITY_CODE', 'str', True, None),
                        ('ORIS_BOILER_ID', 'str', True, None),
-                       ('PLANTID', 'str', True, None),
-                       ('POINTID', 'str', True, None),
+                       ('PLANTID', 'str', False, None),
+                       ('POINTID', 'str', False, None),
                        ('STACKID', 'str', False, None),
                        ('SEGMENT', 'str', False, None),
                        ('AGY_PLANTID', 'str', False, None),
@@ -618,15 +618,16 @@ def fix_inputs(conn, inputvars, logfile):
                                     AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
                                         
                                     WHERE time_zone IS NULL""").fetchall():
-        try:
-            geonames_client = geonames.GeonamesClient('ertacegu')
-            geonames_result = geonames_client.find_timezone({'lat': results[0], 'lng': results[1]})
-            tz = geonames_result['timezoneId']
-            print >> logfile, "  Time zone looked up for "+results[2]+"/"+results[3]+" found to be " + tz
-        except (geonames.GeonamesError, KeyError, httplib.BadStatusLine), err:
-            logging.error('  Error getting timezone for %s, %s: %s' % (results[2], results[3], err))
-            tz = "-99"
-        conn.execute("""UPDATE ertac_pusp_info_file SET time_zone = ? WHERE orispl_code = ? AND unitid = ?""",[tz, results[2], results[3]])
+        if not inputvars['notz']:
+            try:
+                geonames_client = geonames.GeonamesClient('ertacegu')
+                geonames_result = geonames_client.find_timezone({'lat': results[0], 'lng': results[1]})
+                tz = geonames_result['timezoneId']
+                print >> logfile, "  Time zone looked up for "+results[2]+"/"+results[3]+" found to be " + tz
+            except (geonames.GeonamesError, KeyError, httplib.BadStatusLine), err:
+                logging.error('  Error getting timezone for %s, %s: %s' % (results[2], results[3], err))
+                tz = "-99"
+            conn.execute("""UPDATE ertac_pusp_info_file SET time_zone = ? WHERE orispl_code = ? AND unitid = ?""",[tz, results[2], results[3]])
 
 def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
     """Summarize hourly data and merge base year and future year results.
@@ -723,7 +724,7 @@ def process_results(conn, inputvars, logfile):
         UNIQUE (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid));""")    
             
         process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile)
-    
+        
         logging.info("  Calculating Emissions")
         print >> logfile, "  Calculating Emissions"
         query = """INSERT INTO fy_emissions(ertac_region, 
@@ -827,9 +828,19 @@ def process_results(conn, inputvars, logfile):
                                 d += 1
                                 daily_total = 0                  
                         
-                        if inputvars['month'] == 1:
-                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, jan_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated)
-                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?
+                        (ff10_count, ) = conn.execute("""SELECT COUNT(*) FROM ff10_future            
+                                        WHERE 
+                                        cas = ?
+                                        AND plantid = ?
+                                        AND pointid = ?
+                                        AND stackid = ?
+                                        AND segment = ?
+                                        AND orispl_code = ?
+                                        AND unitid = ?
+                                        AND facil_category_code = ?""", [polcode, plantid, pointid, stackid, segment, orispl_code, unitid, fuel_unit_type_bin]).fetchone()
+                        if ff10_count == 0:
+                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, jan_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, facil_category_code, comment)
+                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, cuuaf.ertac_fuel_unit_type_bin,  eauaf.comments
                                         FROM calc_updated_uaf cuuaf
                                         LEFT JOIN ertac_pusp_info_file eauaf
                                         
@@ -846,7 +857,7 @@ def process_results(conn, inputvars, logfile):
                                         AND eauaf.unitid = ?""", [polcode, month_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid])
                         else:
                             conn.execute("""UPDATE ff10_future
-                                        SET """+month_names[inputvars['month']-1]+"""_value = ?                
+                                        SET """+month_names[inputvars['month']-1]+"""_value = """+month_names[inputvars['month']-1]+"""_value + ?                
                                         WHERE 
                                         cas = ?
                                         AND plantid = ?
@@ -854,7 +865,8 @@ def process_results(conn, inputvars, logfile):
                                         AND stackid = ?
                                         AND segment = ?
                                         AND orispl_code = ?
-                                        AND unitid = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid])
+                                        AND unitid = ?
+                                        AND facil_category_code = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid, fuel_unit_type_bin])
                     #orl section
                     else:                    
                         plant_info = [statefips, countyfips, plantid, pointid, stackid, segment, polcode, '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,scc]
@@ -1222,7 +1234,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
             "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "orl-files=", 
-            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly"])
+            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly", "notz"])
         
     except getopt.GetoptError, err:
         print
@@ -1242,6 +1254,7 @@ def main(argv=None):
     inputvars['input_type'] = 'ERTAC'
     inputvars['output_type'] = 'FF10'
     inputvars['run_qa'] = False
+    inputvars['notz'] = False
     argument_list = ''
     
     for opt, arg in opts:
@@ -1266,6 +1279,8 @@ def main(argv=None):
             input_prefix_proj = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
+        elif opt in ("--notz"):
+            inputvars['notz'] = True
         elif opt in ("--monthly"):
             inputvars['monthly'] = True
         elif opt in ("--output-type"):
@@ -1390,11 +1405,12 @@ def main(argv=None):
     fix_inputs(dbconn, inputvars, logfile)                
     if inputvars['input_type'] == 'CAMD':
         convert_camd_to_hdf(dbconn, logfile)
-        run_diagnostics(dbconn, inputvars, logfile)
+        
+    run_diagnostics(dbconn, inputvars, logfile)
     
     rpos = dbconn.execute("""SELECT rpo, states FROM ertac_rpo_listing""").fetchall()
     if len(rpos) == 0:
-        rpos= ['CLI', False]
+        rpos= [['CLI', False]]
    
     for rpo in rpos: 
         dbconn.execute("""DELETE FROM orl_future""")
@@ -1417,14 +1433,18 @@ def main(argv=None):
             else: 
                 m = str(inputvars['month'])
             inputvars['start_date'] = inputvars['base_year']+"-"+m+"-01"
-            inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']), inputvars['month'])[1])
+            inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
                 
             if inputvars['monthly']:
                 if not os.path.exists('forsmokemonthly'):
                     os.makedirs('forsmokemonthly')
-                new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_month_"+str(inputvars['month'])+"_")
-                new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_")
-                
+                if rpo[1]:
+                    new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_month_"+str(inputvars['month'])+"_")
+                    new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_"+rpo[1]+"_")
+                else:
+                    new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_month_"+str(inputvars['month'])+"_")
+                    new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_")
+                   
             logging.info("Summarizing data...")
             print >> logfile
             print >> logfile, "Summarizing data..."
