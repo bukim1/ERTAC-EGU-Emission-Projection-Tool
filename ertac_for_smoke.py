@@ -949,8 +949,8 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
         for unit in non_unique_pusp_info_file:
             print >> logfile, "  " + ertac_lib.nice_str(unit)
 
-    unit_uaf_not_pusp_info_file = conn.execute("""SELECT orispl_code, unitid FROM (SELECT * FROM calc_updated_uaf ORDER BY state) 
-    EXCEPT SELECT orispl_code, unitid FROM ertac_pusp_info_file""").fetchall()
+    unit_uaf_not_pusp_info_file = conn.execute("""SELECT orispl_code, unitid FROM (SELECT * FROM calc_updated_uaf where offline_start_date >= ? ORDER BY state) 
+    EXCEPT SELECT orispl_code, unitid FROM ertac_pusp_info_file """, [inputvars['future_year']+'01-01']).fetchall()
 
     if len(unit_uaf_not_pusp_info_file) > 0:
         print >> logfile, "Warning:", len(unit_uaf_not_pusp_info_file), "facility/units in UAF did not match any ORISPL_CODE, UNITID in PUSP Info File:"
@@ -962,7 +962,7 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
     EXCEPT SELECT orispl_code, unitid FROM calc_updated_uaf""").fetchall()
 
     if len(unit_pusp_info_file_not_uaf) > 0:
-        print >> logfile, "Warning:", len(unit_pusp_info_file_not_uaf), "facility/units in additional UAF did not match any ORISPL_CODE, UNITID in UAF:"
+        print >> logfile, "Warning:", len(unit_pusp_info_file_not_uaf), "facility/units in ertac_pusp_info_file did not match any ORISPL_CODE, UNITID in UAF:"
         for unit in unit_pusp_info_file_not_uaf:
             result = conn.execute("""SELECT orispl_code, unitid, state FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
             print >> logfile, "  " + ertac_lib.nice_str(result)
@@ -974,6 +974,13 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             for unit in result:
                 print >> logfile, "  " + ertac_lib.nice_str(unit)
                 
+    for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel']:    
+        result = conn.execute("""SELECT orispl_code, unitid, state, plantid, pointid, stackid, segment  FROM ertac_pusp_info_file WHERE """+column+""" IS NOT NULL AND """+column+""" = 0  ORDER BY state""").fetchall()
+        if len(result) > 0:
+            print >> logfile, "Warning:", len(result), "facility/units have data in "+column+" that resembles fugitive emission traits"
+            for unit in result:
+                print >> logfile, "  " + ertac_lib.nice_str(unit)             
+                   
     for (polcode, column) in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants:    
         if polcode not in inputvars['pollutants']:   
             if not polcode.isdigit(): 
