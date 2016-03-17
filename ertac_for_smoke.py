@@ -594,7 +594,6 @@ def fix_inputs(conn, inputvars, logfile):
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_plantid = plantid WHERE agy_plantid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_pointid = pointid WHERE agy_pointid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
-    conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET stackid = rowid WHERE stackid IS NULL""")
     
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
@@ -608,7 +607,9 @@ def fix_inputs(conn, inputvars, logfile):
                     WHERE """+column+""" IS NULL""")
         
 
-    for results in conn.execute("""SELECT plant_latitude, plant_longitude, cuuaf.orispl_code, cuuaf.unitid 
+    #ff10 doesn't use time zone so no sense filling in missing ones otherwise
+    if not inputvars['notz'] or inputvars['output_type'] == 'ORL':
+        for results in conn.execute("""SELECT plant_latitude, plant_longitude, cuuaf.orispl_code, cuuaf.unitid 
                                     FROM calc_updated_uaf cuuaf
                 
                                     LEFT JOIN ertac_pusp_info_file eauaf            
@@ -618,7 +619,6 @@ def fix_inputs(conn, inputvars, logfile):
                                     AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
                                         
                                     WHERE time_zone IS NULL""").fetchall():
-        if not inputvars['notz']:
             try:
                 geonames_client = geonames.GeonamesClient('ertacegu')
                 geonames_result = geonames_client.find_timezone({'lat': results[0], 'lng': results[1]})
@@ -942,7 +942,7 @@ def check_uaf_consistency(conn, inputvars, logfile):
             print >> logfile, "  " + ertac_lib.nice_str(unit)
 
 def check_pusp_info_file_consistency(conn, inputvars, logfile):
-    non_unique_pusp_info_file = conn.execute("""SELECT plantid, pointid, stackid, segment, group_concat(state) FROM ertac_pusp_info_file GROUP BY plantid, pointid, stackid, segment HAVING COUNT(1) > 1""").fetchall()
+    non_unique_pusp_info_file = conn.execute("""SELECT plantid, pointid, stackid, segment, ertac_fuel_unit_type_bin, group_concat(state) FROM ertac_pusp_info_file GROUP BY plantid, pointid, stackid, segment, ertac_fuel_unit_type_bin HAVING COUNT(1) > 1""").fetchall()
 
     if len(non_unique_pusp_info_file) > 0:
         print >> logfile, "Warning:", len(non_unique_pusp_info_file), "plant/unit/stack/processes in PUSP Info have more than one entry:"
