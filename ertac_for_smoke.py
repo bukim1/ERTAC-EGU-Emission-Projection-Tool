@@ -608,7 +608,7 @@ def fix_inputs(conn, inputvars, logfile):
         
 
     #ff10 doesn't use time zone so no sense filling in missing ones otherwise
-    if not inputvars['notz'] or inputvars['output_type'] == 'ORL':
+    if inputvars['output_type'] == 'ORL' or (not inputvars['notz']):
         for results in conn.execute("""SELECT plant_latitude, plant_longitude, cuuaf.orispl_code, cuuaf.unitid 
                                     FROM calc_updated_uaf cuuaf
                 
@@ -629,7 +629,7 @@ def fix_inputs(conn, inputvars, logfile):
                 tz = "-99"
             conn.execute("""UPDATE ertac_pusp_info_file SET time_zone = ? WHERE orispl_code = ? AND unitid = ?""",[tz, results[2], results[3]])
 
-def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
+def process_unit_level_ers(conn, inputvars, logfile):
     """Summarize hourly data and merge base year and future year results.
 
     Keyword arguments:
@@ -650,19 +650,19 @@ def process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile):
         ertac_fuel_unit_type_bin, 
         orispl_code, 
         unitid, 
+        state, 
         """+", ".join([ p[1]+'_rate' for p in ppollutants])+""")
         SELECT  cuuaf.ertac_region, 
                 cuuaf.ertac_fuel_unit_type_bin, 
                 cuuaf.orispl_code, 
                 cuuaf.unitid,
+                cuuaf.state,
                 """+", ".join([ 'eav.'+p[1]+'_rate' for p in ppollutants])+"""
         FROM calc_updated_uaf cuuaf
         
         LEFT JOIN ertac_additional_variables eav
         ON cuuaf.state = eav.state
-        AND cuuaf.ertac_fuel_unit_type_bin = eav.ertac_fuel_unit_type_bin
-        
-        WHERE cuuaf.state = ? AND cuuaf.ertac_fuel_unit_type_bin = ? """, [state, fuel_unit_type_bin])
+        AND cuuaf.ertac_fuel_unit_type_bin = eav.ertac_fuel_unit_type_bin""")
 
     logging.info("  Processing Unit Level Emission Rates")
     print >> logfile, "  Processing Unit Level Emission Rates"
@@ -697,6 +697,8 @@ def process_results(conn, inputvars, logfile):
     conn.execute("""DELETE FROM ff10_hourly_future""")
     conn.execute("""DELETE FROM fy_emission_rates""") 
     
+    process_unit_level_ers(conn, inputvars, logfile)
+    
     #we are going to divy everything up by state/fuel bin to ease the burden of lots of calls to huge dbs
     (where, inputs) = build_where(conn, 'calc_updated_uaf.', inputvars, False, True)
     query = """SELECT state, ertac_fuel_unit_type_bin FROM calc_updated_uaf WHERE 1 """+where+""" GROUP BY state, ertac_fuel_unit_type_bin"""
@@ -704,7 +706,23 @@ def process_results(conn, inputvars, logfile):
     for (state, fuel_unit_type_bin) in conn.execute(query, inputs).fetchall():
         logging.info("Processing - " + state + ", " + fuel_unit_type_bin)
         print >> logfile, "Processing - " + state + ", " + fuel_unit_type_bin
-            
+
+        conn.executescript("""CREATE TEMPORARY TABLE temp_fy_emission_rates
+        (ertac_region TEXT NOT NULL COLLATE NOCASE,
+        ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+        orispl_code TEXT NOT NULL COLLATE NOCASE,
+        unitid TEXT NOT NULL COLLATE NOCASE,
+        state TEXT,
+        pm25_rate REAL,
+        pm10_rate REAL,
+        co_rate REAL,
+        voc_rate REAL,
+        nh3_rate REAL,
+        cl2_rate REAL,
+        hcl_rate REAL,
+        PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid),
+        UNIQUE (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid));""")  
+                            
         conn.executescript("""CREATE TEMPORARY TABLE fy_emissions
         (ertac_region TEXT NOT NULL COLLATE NOCASE,
         ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
@@ -723,7 +741,8 @@ def process_results(conn, inputvars, logfile):
         PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid),
         UNIQUE (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid));""")    
             
-        process_unit_level_ers(conn, inputvars, state, fuel_unit_type_bin, logfile)
+        conn.execute("""INSERT INTO temp_fy_emission_rates(ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, state, pm25_rate, pm10_rate, co_rate, voc_rate, nh3_rate, cl2_rate, hcl_rate)
+        SELECT * FROM fy_emission_rates WHERE state = ? AND ertac_fuel_unit_type_bin = ?""", [state, fuel_unit_type_bin])
         
         logging.info("  Calculating Emissions")
         print >> logfile, "  Calculating Emissions"
@@ -757,7 +776,7 @@ def process_results(conn, inputvars, logfile):
                             
         FROM hourly_diagnostic_file hdf
         
-        INNER JOIN fy_emission_rates fyer
+        INNER JOIN temp_fy_emission_rates fyer
         
         ON hdf.orispl_code = fyer.orispl_code
         AND hdf.unitid = fyer.unitid
@@ -799,7 +818,8 @@ def process_results(conn, inputvars, logfile):
                                             WHERE eauaf.plantid = ?
                                             AND eauaf.pointid = ?
                                             AND eauaf.stackid = ?
-                                            AND eauaf.segment = ?""", [plantid, pointid, stackid, segment]).fetchone()
+                                            AND eauaf.segment = ?
+                                            AND eauaf.ertac_fuel_unit_type_bin = ?""", [plantid, pointid, stackid, segment, fuel_unit_type_bin]).fetchone()
     
                         else:
                             (percentage, ) = conn.execute("""SELECT COALESCE("""+column+"""_percentage, 0) 
@@ -807,14 +827,15 @@ def process_results(conn, inputvars, logfile):
                                             WHERE eauaf.plantid = ?
                                             AND eauaf.pointid = ?
                                             AND eauaf.stackid = ?
-                                            AND eauaf.segment = ?""", [plantid, pointid, stackid, segment]).fetchone()
+                                            AND eauaf.segment = ?
+                                            AND eauaf.ertac_fuel_unit_type_bin = ?""", [plantid, pointid, stackid, segment, fuel_unit_type_bin]).fetchone()
     
                         d = 0
                         h = 0
                         daily_total=0
                         month_total=0
                             
-                        for (heat_input, mass) in conn.execute("""SELECT COALESCE(heat_input,0.0), COALESCE("""+column+"""_mass,0.0) FROM fy_emissions WHERE orispl_code = ? AND unitid = ? ORDER BY calendar_hour """, [orispl_code, unitid]).fetchall():
+                        for (heat_input, mass) in conn.execute("""SELECT COALESCE(heat_input,0.0), COALESCE("""+column+"""_mass,0.0) FROM fy_emissions WHERE orispl_code = ? AND unitid = ? AND ertac_fuel_unit_type_bin = ? ORDER BY calendar_hour """, [orispl_code, unitid,fuel_unit_type_bin]).fetchall():
                             plant_info[h+11]=mass*percentage/100.0
                             daily_total+=plant_info[h+11]
                             month_total+=plant_info[h+11]                        
@@ -828,6 +849,7 @@ def process_results(conn, inputvars, logfile):
                                 d += 1
                                 daily_total = 0                  
                         
+                        #with this select you do want to keep any combination regardless of fuel type
                         (ff10_count, ) = conn.execute("""SELECT COUNT(*) FROM ff10_future            
                                         WHERE 
                                         cas = ?
@@ -836,10 +858,17 @@ def process_results(conn, inputvars, logfile):
                                         AND stackid = ?
                                         AND segment = ?
                                         AND orispl_code = ?
-                                        AND unitid = ?
-                                        AND facil_category_code = ?""", [polcode, plantid, pointid, stackid, segment, orispl_code, unitid, fuel_unit_type_bin]).fetchone()
+                                        AND unitid = ?""", [polcode, plantid, pointid, stackid, segment, orispl_code, unitid]).fetchone()
+                                        
+                        if inputvars['month'] < 10:
+                            m = '0'+str(inputvars['month'])
+                        else: 
+                            m = str(inputvars['month'])
+                        ms = inputvars['future_year']+"-"+m+"-01"
+                        me = inputvars['future_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
+
                         if ff10_count == 0:
-                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, jan_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, facil_category_code, comment)
+                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, """+month_names[inputvars['month']-1]+"""_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, facil_category_code, comment)
                                         SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, cuuaf.ertac_fuel_unit_type_bin,  eauaf.comments
                                         FROM calc_updated_uaf cuuaf
                                         LEFT JOIN ertac_pusp_info_file eauaf
@@ -849,12 +878,15 @@ def process_results(conn, inputvars, logfile):
                                         AND cuuaf.ertac_region = eauaf.ertac_region
                                         AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
                                         
-                                        WHERE eauaf.plantid = ?
+                                        WHERE 
+                                        eauaf.plantid = ?
                                         AND eauaf.pointid = ?
                                         AND eauaf.stackid = ?
                                         AND eauaf.segment = ?
                                         AND eauaf.orispl_code = ?
-                                        AND eauaf.unitid = ?""", [polcode, month_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid])
+                                        AND eauaf.unitid = ?
+                                        AND cuuaf.online_start_date <= ?
+                                        AND cuuaf.offline_start_date >= ? """, [polcode, month_total, inputvars['base_year'], int(time.strftime("%Y%m%d")), plantid, pointid, stackid, segment, orispl_code, unitid, me, ms])
                         else:
                             conn.execute("""UPDATE ff10_future
                                         SET """+month_names[inputvars['month']-1]+"""_value = """+month_names[inputvars['month']-1]+"""_value + ?                
@@ -865,8 +897,7 @@ def process_results(conn, inputvars, logfile):
                                         AND stackid = ?
                                         AND segment = ?
                                         AND orispl_code = ?
-                                        AND unitid = ?
-                                        AND facil_category_code = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid, fuel_unit_type_bin])
+                                        AND unitid = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid])
                     #orl section
                     else:                    
                         plant_info = [statefips, countyfips, plantid, pointid, stackid, segment, polcode, '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,scc]
@@ -919,7 +950,7 @@ def process_results(conn, inputvars, logfile):
                             AND eauaf.orispl_code = ?
                             AND eauaf.unitid = ?""", [polcode, annual_total, plantid, pointid, stackid, segment, orispl_code, unitid])
                 
-           
+        conn.execute("""DROP TABLE temp_fy_emission_rates""")   
         conn.execute("""DROP TABLE fy_emissions""")
         
         # Save changes
@@ -1100,8 +1131,6 @@ def check_additional_control_consistency(conn, inputvars, logfile):
         WHERE orispl_code = ?
         AND unitid = ?
         AND pollutant_code = ?
-        AND (emission_rate IS NOT NULL
-        OR control_efficiency IS NOT NULL)
         ORDER BY COALESCE(factor_start_date, ?),
         COALESCE(factor_end_date, ?)""", (plant, unit, poll, ertac_lib.online_default, ertac_lib.offline_default))
 

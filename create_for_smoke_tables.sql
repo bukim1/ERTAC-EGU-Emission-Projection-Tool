@@ -134,11 +134,12 @@ unit_min_optimal_load_threshold_determinant REAL NOT NULL,
 heat_input_calculation_percentile REAL NOT NULL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
 
-CREATE TEMPORARY TABLE fy_emission_rates
+CREATE TABLE fy_emission_rates
 (ertac_region TEXT NOT NULL COLLATE NOCASE,
 ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
 orispl_code TEXT NOT NULL COLLATE NOCASE,
 unitid TEXT NOT NULL COLLATE NOCASE,
+state TEXT,
 pm25_rate REAL,
 pm10_rate REAL,
 co_rate REAL,
@@ -200,8 +201,7 @@ emission_rate REAL,
 control_efficiency REAL,
 control_programs TEXT,
 control_description TEXT,
-submitter_email TEXT,
-PRIMARY KEY (orispl_code, unitid, pollutant_code));
+submitter_email TEXT);
 
 DROP TABLE IF EXISTS ertac_additional_variables;
 CREATE TABLE ertac_additional_variables
