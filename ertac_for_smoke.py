@@ -980,22 +980,22 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
         for unit in non_unique_pusp_info_file:
             print >> logfile, "  " + ertac_lib.nice_str(unit)
 
-    unit_uaf_not_pusp_info_file = conn.execute("""SELECT orispl_code, unitid FROM (SELECT * FROM calc_updated_uaf where offline_start_date >= ? ORDER BY state) 
-    EXCEPT SELECT orispl_code, unitid FROM ertac_pusp_info_file """, [inputvars['future_year']+'01-01']).fetchall()
+    unit_uaf_not_pusp_info_file = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM (SELECT * FROM calc_updated_uaf where offline_start_date >= ? ORDER BY state) 
+    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file """, [inputvars['future_year']+'01-01']).fetchall()
 
     if len(unit_uaf_not_pusp_info_file) > 0:
-        print >> logfile, "Warning:", len(unit_uaf_not_pusp_info_file), "facility/units in UAF did not match any ORISPL_CODE, UNITID in PUSP Info File:"
+        print >> logfile, "Warning:", len(unit_uaf_not_pusp_info_file), "facility/units in UAF did not match any ORISPL_CODE, UNITID, ERTAC_FUEL_UNIT_BIN_TYPE in PUSP Info File:"
         for unit in unit_uaf_not_pusp_info_file:
-            result = conn.execute("""SELECT orispl_code, unitid, state, camd_by_hourly_data_type  FROM calc_updated_uaf WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
+            result = conn.execute("""SELECT orispl_code, unitid, state, ertac_fuel_unit_type_bin  FROM calc_updated_uaf WHERE orispl_code = ? AND unitid =? AND ertac_fuel_unit_type_bin = ?""", unit).fetchone()
             print >> logfile, "  " + ertac_lib.nice_str(result)
 
-    unit_pusp_info_file_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM ertac_pusp_info_file 
-    EXCEPT SELECT orispl_code, unitid FROM calc_updated_uaf""").fetchall()
+    unit_pusp_info_file_not_uaf = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file 
+    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM calc_updated_uaf""").fetchall()
 
     if len(unit_pusp_info_file_not_uaf) > 0:
-        print >> logfile, "Warning:", len(unit_pusp_info_file_not_uaf), "facility/units in ertac_pusp_info_file did not match any ORISPL_CODE, UNITID in UAF:"
+        print >> logfile, "Warning:", len(unit_pusp_info_file_not_uaf), "facility/units in ertac_pusp_info_file did not match any ORISPL_CODE, UNITID, ERTAC_FUEL_UNIT_BIN_TYPE in UAF:"
         for unit in unit_pusp_info_file_not_uaf:
-            result = conn.execute("""SELECT orispl_code, unitid, state FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
+            result = conn.execute("""SELECT orispl_code, unitid, state, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? AND ertac_fuel_unit_type_bin = ?""", unit).fetchone()
             print >> logfile, "  " + ertac_lib.nice_str(result)
             
     for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel', 'scc']:    
@@ -1497,7 +1497,7 @@ def main(argv=None):
     
         dbconn.execute("""UPDATE ff10_future SET ann_emis = """ + " + ".join([m+"_value" for m in month_names]))    
         logging.info("Writing out reports:")
-        write_final_data(dbconn, inputvars, new_output_prefix,False,True,  (not inputvars['monthly']), logfile)
+        write_final_data(dbconn, inputvars, new_output_prefix,True,True,  (not inputvars['monthly']), logfile)
 
     logging.info("Finished writing reports.")
     dbconn.close()
