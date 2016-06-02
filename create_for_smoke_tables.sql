@@ -148,7 +148,7 @@ nh3_rate REAL,
 cl2_rate REAL,
 hcl_rate REAL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid),
-UNIQUE (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid));
+UNIQUE (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, unitid));
 
 
 DROP TABLE IF EXISTS ertac_pusp_info_file;
