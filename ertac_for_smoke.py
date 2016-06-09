@@ -1287,6 +1287,7 @@ def main(argv=None):
     debug_level       = "INFO"
     input_prefix_pre  = None
     input_prefix_proj = None
+    input_prefix_fs = None
     output_prefix     = ''
     inputvars         = {}
     sql_database      = ''
