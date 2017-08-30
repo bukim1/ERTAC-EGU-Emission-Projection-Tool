@@ -4,16 +4,19 @@
 
 """Preprocessing steps for ERTAC EGU projection"""
 
+from __future__ import division
+
+VERSION = "2.1"
+# Updated to version 2.0g as of 9/25/2015.
+
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.01"
-
 import sys
 
 try:
-    import getopt, logging, os, time
+    import getopt, logging, os, time, math
 except ImportError:
     print >> sys.stderr, "Fatal error: can't import all required modules."
     print >> sys.stderr, "Run python -V to find your Python version."
@@ -47,17 +50,19 @@ except ImportError:
 #
 # Input file names are the hard-coded CSV files listed below, optionally
 # prefixed with the string specified with the -i command-line switch.
+# Similarly, output file names can also have an optional prefix specified with
+# the -o command-line switch.
 #
 # All Python and SQL code files and the fixed CSV files for lookup tables can
 # (and should) be in a separate non-data directory, but must be kept together.
 #
 # Example usage: assuming for example that there is a valid set of input CSV
-# files present in ~/va_data and that the program code files are in
-# ~/ertac_code, then change into the data directory and run the preprocessing
+# files present in ~/egu_data and that the program code files are located in
+# ~/ertac2code, then change into the data directory and run the preprocessing
 # program by the following two commands:
 #
-# cd ~/va_data
-# ../ertac_code/ertac_preprocess.py
+# cd ~/egu_data
+# ~/ertac2code/ertac_preprocess.py
 
 
 
@@ -99,8 +104,8 @@ def main(argv=None):
         return 2
 
     debug_level = "INFO"
-    input_prefix = None
-    output_prefix = None
+    input_prefix = ""
+    output_prefix = ""
     suppress_pr_messages = False
 
     for opt, arg in opts:
@@ -117,7 +122,7 @@ def main(argv=None):
             input_prefix = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
-            
+
         #jmj 11/20/2013 adding suppression of partial year reporter messages
         elif opt in ("--suppress_pr"):
             suppress_pr_messages = True
@@ -127,14 +132,14 @@ def main(argv=None):
     if debug_level == "DEBUG":
         # Detailed logging to file for postmortem analysis.
         logging.basicConfig(
-            filename='ertac_preprocess_debug_log.txt',
+            filename = output_prefix + 'ertac_preprocess_debug_log.txt',
             filemode = 'w',
-            format='%(asctime)s %(levelname)-8s %(filename)s %(lineno)d %(message)s',
-            level=logging.DEBUG)
+            format = '%(asctime)s %(levelname)-8s %(filename)s %(lineno)d %(message)s',
+            level = logging.DEBUG)
 
     elif debug_level == "INFO":
         # Brief logging to screen, to show program progress.
-        logging.basicConfig(format='%(levelname)-8s %(message)s', level=logging.INFO)
+        logging.basicConfig(format = '%(levelname)-8s %(message)s', level = logging.INFO)
 
     elif debug_level == "NONE":
         # No logging.
@@ -142,11 +147,7 @@ def main(argv=None):
 
 
     # Regular program operation log file, separate from detailed debug log above.
-    if output_prefix is not None:
-        logfilename = output_prefix + 'ertac_egu_log.txt'
-    else:
-        logfilename = 'ertac_egu_log.txt'
-
+    logfilename = output_prefix + 'ertac_egu_preprocessor_log.txt'
     try:
         logfile = open(logfilename, 'w')
     except IOError:
@@ -157,12 +158,16 @@ def main(argv=None):
     # Identify versions of Python and SQLite library, and record in log file.
     # Also log revision dates of model code.
     logging.info("Program started at " + time.asctime())
-    logging.info("ERTAC EGU version: " + VERSION)
+    logging.info("ERTAC EGU preprocessor version: " + VERSION)
+    logging.info("Using ertac_lib version: " + ertac_lib.VERSION)
+    logging.info("Using ertac_tables version: " + ertac_tables.VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
     print >> logfile, "Program started at " + time.asctime()
-    print >> logfile, "ERTAC EGU version: " + VERSION
+    print >> logfile, "ERTAC EGU preprocessor version: " + VERSION
+    print >> logfile, "Using ertac_lib version: " + ertac_lib.VERSION
+    print >> logfile, "Using ertac_tables version: " + ertac_tables.VERSION
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
@@ -235,6 +240,8 @@ def main(argv=None):
     # emission_rate or control_efficiency is present.
     # 5. Check in group total listing that list of states is consistent for each
     # group, and that all states are valid.
+    # 6. For V2, check in demand transfer table that same region+fuel isn't used
+    # as both origin and destination at the same hour.
 
     # UAF
     logging.info("Checking UAF for consistent facility data and unit online/offline data.")
@@ -245,7 +252,7 @@ def main(argv=None):
     check_growth_rate_consistency(dbconn, logfile)
 
     # Input variables
-    logging.info("Checking input variables for consistent new unit sizes.")
+    logging.info("Checking input variables for consistent heat rate and EF min/max and new unit sizes.")
     check_input_variable_consistency(dbconn, logfile)
 
     # Control/emissions
@@ -256,6 +263,10 @@ def main(argv=None):
     # Group total listing
     logging.info("Checking group total listing for consistent lists of valid states.")
     check_group_total_listing_consistency(dbconn, logfile)
+
+    # Demand transfers
+    logging.info("Checking demand transfers for consistent hourly origin/destination.")
+    check_demand_transfer_consistency(dbconn, logfile)
 
     # 1.01: Delete hourly data from non-EGU units.
     logging.info("Removing non-EGU data.")
@@ -272,9 +283,26 @@ def main(argv=None):
     # complete matched set of output files from the first phase (optionally
     # prefixed according to the -o switch for output) can be read in during the
     # second phase, using the -i switch for the input prefix.
+    # RW 8/26/2015 Since calc UAF now has many extra columns that aren't in the
+    # initial UAF, have to name columns for INSERT.
     logging.info("Copying remaining input data to calc_* tables.")
     dbconn.executescript("""DELETE FROM calc_updated_uaf;
     INSERT INTO calc_updated_uaf
+    (orispl_code, unitid, form860_plant_id, fips_code, county_code, county_name,
+    state, needs_unit_id, form860_unit_id, plant_latitude, plant_longitude,
+    inventory_stack_id, facility_name, needs_ipm_region, nerc_main_region,
+    eia_region_old_nerc, ertac_region, other_consuming_regions, camd_by_hourly_data_type,
+    annual_hi_partials, camd_by_operating_status, camd_stack_info, online_start_date,
+    offline_start_date, primary_fuel_type, main_fuel_characteristics, secondary_or_substitute_fuel,
+    prime_mover_generator_unit_type, camd_unit_type, ertac_fuel_unit_type_bin,
+    max_ertac_hi_hourly_summer, max_ertac_hi_hourly_winter, hourly_base_max_actual_hi,
+    nameplate_capacity, max_summer_capacity, max_winter_capacity, max_unit_heat_input,
+    calculated_by_uf, max_annual_state_uf, max_annual_ertac_uf, operating_hours_by,
+    max_by_hourly_gload, max_by_hourly_sload, nominal_heat_rate, calc_by_average_heat_rate,
+    ertac_heat_rate, unit_annual_capacity_limit, unit_max_optimal_load_threshold,
+    unit_min_optimal_load_threshold, unit_ownership_code, multiple_ownership_notation,
+    secondary_owner, tertiary_owner, new_unit_flag, capacity_limited_unit_flag,
+    modifier_email_address, unit_completeness_check, hours_cap)
     SELECT * FROM ertac_initial_uaf;
 
     DELETE FROM calc_growth_rates;
@@ -284,6 +312,23 @@ def main(argv=None):
     DELETE FROM calc_input_variables;
     INSERT INTO calc_input_variables
     SELECT * FROM ertac_input_variables;
+
+    DELETE FROM calc_demand_transfers;
+    INSERT INTO calc_demand_transfers
+    SELECT * FROM ertac_demand_transfers;
+
+    -- Need to have summary of all tranfers in or out, even if other endpoint is
+    -- outside the scope of the current model run.
+    DELETE FROM calc_demand_transfer_summary;
+    INSERT INTO calc_demand_transfer_summary (transfer_region, transfer_fuel, calendar_hour, net_demand_change)
+    SELECT transfer_region, transfer_fuel, calendar_hour, SUM(demand_transfer)
+    FROM
+        (SELECT destination_region AS transfer_region, destination_fuel AS transfer_fuel, calendar_hour, demand_transfer
+        FROM ertac_demand_transfers
+        UNION ALL
+        SELECT origin_region AS transfer_region, origin_fuel AS transfer_fuel, calendar_hour, -demand_transfer
+        FROM ertac_demand_transfers)
+    GROUP BY transfer_region, transfer_fuel, calendar_hour;
 
     DELETE FROM calc_control_emissions;
     INSERT INTO calc_control_emissions
@@ -297,7 +342,7 @@ def main(argv=None):
     INSERT INTO calc_group_total_listing
     SELECT * FROM group_total_listing;""")
 
-    #jmj function to convert seasonal control into regular controls
+    #1.04: jmj function to convert seasonal control into regular controls
     insert_seasonal_controls(dbconn, base_year, future_year, logfile)
 
     # Fill in unspecified online/offline dates with sentinel values outside
@@ -333,6 +378,10 @@ def main(argv=None):
     logging.info("Checking UAF for new units in region/fuel with no base-year activity.")
     check_uaf_new_units_no_base_year(dbconn, base_year, future_year, logfile)
 
+    # 5/2/2014 jmj adding a check to make sure there is no base year data for a unit after its retirement date
+    logging.info("Checking UAF for retired units in region/fuel with base-year activity.")
+    check_uaf_retired_units_with_base_year(dbconn, base_year, logfile)
+
     # 20120301 New edit check to warn about region/fuel with fewer than 10 units
     # active in base year.
     logging.info("Checking base-year hourly data for region/fuel with fewer than 10 units.")
@@ -341,28 +390,38 @@ def main(argv=None):
     # 20120430 New edit check to warn about region/fuel where all units retired.
     logging.info("Checking for region/fuel with all units retired in future.")
     check_all_units_retired(dbconn, future_year, logfile)
+
     # If base year was a leap year but future year isn't, delete recorded
     # Feb. 29 data before ranking days/hours for hierarchy.
     if ertac_lib.is_leap_year(base_year) and not ertac_lib.is_leap_year(future_year):
         logging.info("Deleting February 29 base year hourly data.")
         delete_feb29_data(dbconn, base_year, logfile)
 
-    # 1.04: Fill in the 1-hour, 6-hour, and 24-hour temporal hierarchies within
+    # Fill in missing GLOAD in calc_hourly_base for units that report SLOAD
+    # instead.
+    # RW 9/17/2015 Moved this back before temporal ranking, so units reporting
+    # only SLOAD will be able contribute GLOAD to totals.  Don't know why Joseph
+    # had moved this to go after temporal hierarchy determination.
+    logging.info("Filling GLOAD for units that report only SLOAD.")
+    fill_gload_from_sload(dbconn, logfile)
+
+    # 2.02: RW 8/26/2015 Compute and store the per-unit statistical ranges, annual and
+    # OS/non-OS averages in the UAF, along with region/fuel hard lower and upper
+    # limits for heat rate and EFs.
+    logging.info("Calculating unit operating statistics to store in UAF.")
+    calc_unit_stats(dbconn, logfile)
+
+    # 1.05: Fill in the 1-hour, 6-hour, and 24-hour temporal hierarchies within
     # each region and fuel bin, based on decreasing total hourly GLOAD.
     logging.info("Filling temporal hierarchies.")
     fill_temporal_hierarchies(dbconn, logfile)
 
-    # Fill in missing GLOAD in calc_hourly_base for units that report SLOAD
-    # instead.
-    logging.info("Filling GLOAD for units that report only SLOAD.")
-    fill_gload_from_sload(dbconn, logfile)
-    
-    #jmj 11/20/2013 adding base year operating calculations prior to filling in partial year reports
+    #2.03: jmj 11/20/2013 adding base year operating calculations prior to filling in partial year reports
     logging.info("Calculating base year operating hours.")
     calculate_base_year_op_hours(dbconn, logfile)
 
 
-    # 1.05, 1.06: Fill remaining hours of any partial-year data using flat
+    # 1.06, 1.07: Fill remaining hours of any partial-year data using flat
     # profile (if part-HI supplied) or 0, reporting summary.
     # jmj adding a variable to allow suppression of the partial year messages
     logging.info("Filling partial-year data.")
@@ -379,32 +438,37 @@ def main(argv=None):
     logging.info("Calculating non-peak growth factors.")
     calculate_non_peak_growth_factors(dbconn, logfile)
 
-    # 1.07: Then can calculate future year hourly growth and generation, further
+    # 1.08: Then can calculate future year hourly growth and generation, further
     # updating calc_generation_parms.
     logging.info("Calculating future hourly growth and generation.")
     calculate_future_generation_growth(dbconn, logfile)
 
-    # 2.02: Calculate base year average heat rate for every unit; use that value
+    # For V2, add net demand transfers to calc_generation_parms, independently
+    # from effects of hourly growth rates.
+    logging.info("Updating calc_generation_parms for demand tranfers.")
+    update_calc_generation_parms_transfers(dbconn, logfile)
+
+    # 2.04: Calculate base year average heat rate for every unit; use that value
     # to update ertac heat rate in UAF unless state-supplied nominal heat rate
     # is included.
     logging.info("Calculating average heat rate and ERTAC heat rate.")
     calculate_heat_rates(dbconn, future_year, logfile)
 
-    # 2.03: Calculate percentile-based max ERTAC heat input hourly summer for
+    # 2.05: Calculate percentile-based max ERTAC heat input hourly summer for
     # every unit.
     logging.info("Calculating max heat inputs.")
     calculate_heat_inputs(dbconn, logfile)
 
-    # 2.04: Calculate percentile-based unit optimal load thresholds.
+    # 2.06: Calculate percentile-based unit optimal load thresholds.
     logging.info("Calculating optimal load thresholds.")
     calculate_optimal_loads(dbconn, logfile)
 
-    # 2.05: Calculate max_annual_ertac_uf for every unit, from larger of actual
+    # 2.07: Calculate max_annual_ertac_uf for every unit, from larger of actual
     # or defaults, unless max_annual_state_uf overrides all others.
     logging.info("Calculating utilization fractions.")
     calculate_utilization_fractions(dbconn, logfile)
 
-    # 1.08: Determine unit allocation order based on utilization within each
+    # 1.09: Determine unit allocation order based on utilization within each
     # region/fuel bin.
     logging.info("Setting unit allocation order.")
     fill_unit_hierarchy(dbconn, base_year, future_year, logfile)
@@ -414,7 +478,7 @@ def main(argv=None):
     logging.info("Calculating max gload for existing units.")
     calc_max_gload(dbconn, logfile)
 
-    # 2.06: Calculate hourly proxy generation for new units.
+    # 2.08: Calculate hourly proxy generation for new units.
     logging.info("Calculating hourly proxy generation for new units.")
     calc_hourly_proxy(dbconn, base_year, future_year, logfile)
 
@@ -427,12 +491,12 @@ def main(argv=None):
     SET offline_start_date = NULL
     WHERE offline_start_date = ?""", (ertac_lib.offline_default,))
 
-    # 2.07, 2.08: Run range checks on calculated UAF, for warnings before
+    # 2.09, 2.10: Run range checks on calculated UAF, for warnings before
     # projection phase.
     logging.info("Checking output data ranges:")
     ertac_lib.check_data_ranges('calc_updated_uaf', dbconn, ertac_tables.uaf_columns, logfile)
 
-    # 1.09, 2.09: Export intermediate files as input to post-processing steps.
+    # 1.10, 2.11: Export intermediate files as input to post-processing steps.
     logging.info("Writing output data:")
     write_calculated_data(dbconn, output_prefix, logfile)
     logging.info("Finished writing output data.")
@@ -454,14 +518,24 @@ def load_initial_data(conn, in_prefix, logfile):
     logfile -- file where logging messages will be written
 
     """
+
+    #jmj fails when a necessary file is not load 150413
     ertac_lib.load_csv_into_table(None, os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'states', conn, ertac_tables.states_columns, logfile)
     ertac_lib.load_csv_into_table(None, os.path.join(os.path.relpath(sys.path[0]), 'counties.csv'), 'counties', conn, ertac_tables.counties_columns, logfile)
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix, 'ertac_initial_uaf.csv', 'ertac_initial_uaf', conn, ertac_tables.uaf_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix, 'ertac_growth_rates.csv', 'ertac_growth_rates', conn, ertac_tables.growth_rate_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix, 'ertac_input_variables.csv', 'ertac_input_variables', conn, ertac_tables.input_variable_columns, logfile)
+    if not ertac_lib.load_csv_into_table(in_prefix, 'ertac_initial_uaf_v2.csv', 'ertac_initial_uaf', conn, ertac_tables.uaf_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file ertac_initial_uaf_v2"
+        sys.exit(1)
+    if not ertac_lib.load_csv_into_table(in_prefix, 'ertac_growth_rates.csv', 'ertac_growth_rates', conn, ertac_tables.growth_rate_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file ertac_growth_rates"
+        sys.exit(1)
+    if not ertac_lib.load_csv_into_table(in_prefix, 'ertac_input_variables_v2.csv', 'ertac_input_variables', conn, ertac_tables.input_variable_columns, logfile):
+        print >> sys.stderr, "Fatal error: could not load necessary file ertac_input_variables_v2"
+        sys.exit(1)
+    # For V2, added new optional input for demand transfers.
+    ertac_lib.load_csv_into_table(in_prefix, 'ertac_demand_transfer.csv', 'ertac_demand_transfers', conn, ertac_tables.demand_transfer_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_control_emissions.csv', 'ertac_control_emissions', conn, ertac_tables.control_emission_columns, logfile)
     #jmj 10/24/2013 adding a new spreadsheet with seasonal controls
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_seasonal_control_emissions.csv', 'ertac_seasonal_control_emissions', conn, ertac_tables.seasonal_control_emission_columns, logfile)
@@ -469,9 +543,16 @@ def load_initial_data(conn, in_prefix, logfile):
     ertac_lib.load_csv_into_table(in_prefix, 'group_total_listing.csv', 'group_total_listing', conn, ertac_tables.group_total_columns, logfile)
 
     #jmj 3/31/2014 moved these to the bottom so that any failures in other files happen first given the length of time to load these
+    #if not ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base.csv', 'camd_hourly_base', conn, ertac_tables.camd_columns, logfile) or ertac_lib.load_csv_into_table(in_prefix, 'ertac_hourly_noncamd.csv', 'ertac_hourly_noncamd', conn, ertac_tables.camd_columns, logfile):
+    #    print >> sys.stderr, "Fatal error: could not load necessary files camd_hourly_base or noncamd_hourly_base"
+    #    sys.exit(1)
+
+    # For V2, partially reverted to allow either or both hourly files missing,
+    # so basic QA of other inputs by preprocessor can still be done without a
+    # fatal error if these are absent.
     ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base.csv', 'camd_hourly_base', conn, ertac_tables.camd_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_hourly_noncamd.csv', 'ertac_hourly_noncamd', conn, ertac_tables.camd_columns, logfile)
-    
+
 
 def validate_base_and_future_years(conn, logfile):
     """Validate the base_year and future_year for input variables, growth rates, and hourly data.
@@ -504,8 +585,9 @@ def validate_base_and_future_years(conn, logfile):
         ertac_lib.log_and_exit(logfile, "Error: ERTAC_INPUT_VARIABLES does not have exactly one BASE_YEAR and FUTURE_YEAR.")
 
     (base_year, future_year) = year_list[0]
-    if base_year >= future_year:
-        ertac_lib.log_and_exit(logfile, "Error: ERTAC_INPUT_VARIABLES has BASE_YEAR >= FUTURE_YEAR.")
+    #jmj allows base year = future year runs 150413
+    if base_year > future_year:
+        ertac_lib.log_and_exit(logfile, "Error: ERTAC_INPUT_VARIABLES has BASE_YEAR > FUTURE_YEAR.")
 
     growth_year_list = conn.execute("SELECT DISTINCT base_year, future_year FROM ertac_growth_rates").fetchall()
     if len(growth_year_list) != 1:
@@ -514,8 +596,9 @@ def validate_base_and_future_years(conn, logfile):
         ertac_lib.log_and_exit(logfile, "Error: ERTAC_GROWTH_RATES does not have exactly one BASE_YEAR and FUTURE_YEAR.")
 
     (growth_rate_base_year, growth_rate_future_year) = growth_year_list[0]
-    if growth_rate_base_year >= growth_rate_future_year:
-        ertac_lib.log_and_exit(logfile, "Error: ERTAC_GROWTH_RATES has BASE_YEAR >= FUTURE_YEAR.")
+    #jmj allows base year = future year runs 150413
+    if growth_rate_base_year > growth_rate_future_year:
+        ertac_lib.log_and_exit(logfile, "Error: ERTAC_GROWTH_RATES has BASE_YEAR > FUTURE_YEAR.")
 
     if growth_rate_base_year != base_year or growth_rate_future_year != future_year:
         ertac_lib.log_and_exit(logfile, "Error: ERTAC_GROWTH_RATES does not match BASE_YEAR and FUTURE_YEAR from ERTAC_INPUT_VARIABLES.")
@@ -735,7 +818,7 @@ def validate_units(conn, logfile):
         print >> logfile, "Warning:", len(unit_control_not_uaf), "facility/units in seasonal control/emissions data did not match any ORISPL_CODE, UNITID in UAF:"
         for unit in unit_control_not_uaf:
             print >> logfile, "  " + ertac_lib.nice_str(unit)
-            
+
     # Check list of facility/unit IDs from CAMD hourly data against UAF.
     unit_hourly_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM camd_hourly_base
     EXCEPT SELECT orispl_code, unitid FROM ertac_initial_uaf""").fetchall()
@@ -743,7 +826,18 @@ def validate_units(conn, logfile):
     if len(unit_hourly_not_uaf) > 0:
         print >> logfile, "Warning:", len(unit_hourly_not_uaf), "facility/units in CAMD hourly data did not match any ORISPL_CODE, UNITID in UAF:"
         for unit in unit_hourly_not_uaf:
-            print >> logfile, "  " + ertac_lib.nice_str(unit)
+            #jmj 9/3/2014 - add in an extra check for units with leading zeros
+            plantarray = list(unit[1])
+            while plantarray[0] == "0":
+                plantarray.remove("0")
+            if unit[1] != "".join(plantarray):
+                if len(conn.execute("""SELECT orispl_code, state FROM ertac_initial_uaf WHERE
+                orispl_code = ? and unitid=?""", [unit[0], "".join(plantarray)]).fetchall()) > 0:
+                    print >> logfile, "  " + ertac_lib.nice_str(unit) + " has an entry in the UAF that seems similar, but does not have leading 0's"
+                else:
+                    print >> logfile, "  " + ertac_lib.nice_str(unit)
+            else:
+                print >> logfile, "  " + ertac_lib.nice_str(unit)
 
     # Check list of facility/unit IDs from non-CAMD hourly data against UAF.
     unit_noncamd_hourly_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM ertac_hourly_noncamd
@@ -752,8 +846,18 @@ def validate_units(conn, logfile):
     if len(unit_noncamd_hourly_not_uaf) > 0:
         print >> logfile, "Warning:", len(unit_noncamd_hourly_not_uaf), "facility/units in non-CAMD hourly data did not match any ORISPL_CODE, UNITID in UAF:"
         for unit in unit_noncamd_hourly_not_uaf:
-            print >> logfile, "  " + ertac_lib.nice_str(unit)
-
+            #jmj 9/3/2014 - add in an extra check for units with leading zeros
+            plantarray = list(unit[1])
+            while plantarray[0] == "0":
+                plantarray.remove("0")
+            if unit[1] != "".join(plantarray):
+                if len(conn.execute("""SELECT orispl_code, state FROM ertac_initial_uaf WHERE
+                orispl_code = ? and unitid=?""", [unit[0], "".join(plantarray)]).fetchall()) > 0:
+                    print >> logfile, "  " + ertac_lib.nice_str(unit) + " has an entry in the UAF that seems similar, but does not have leading 0's"
+                else:
+                    print >> logfile, "  " + ertac_lib.nice_str(unit)
+            else:
+                print >> logfile, "  " + ertac_lib.nice_str(unit)
 
 
 def check_uaf_consistency(conn, base_year, logfile):
@@ -931,13 +1035,52 @@ def check_growth_rate_consistency(conn, logfile):
 
 
 def check_input_variable_consistency(conn, logfile):
-    """Check input variables for consistent new unit sizes.
+    """Check input variables for consistent heat rate and EF min/max and new unit sizes.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
     logfile -- file where logging messages will be written
 
     """
+    print >> logfile
+    print >> logfile, "Checking input variables for consistent heat rate min/max."
+    # Check that heat rate min <= heat rate max.
+    inconsistent_limits = conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin,
+    heat_rate_min, heat_rate_max
+    FROM ertac_input_variables
+    WHERE heat_rate_min > heat_rate_max
+    ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall()
+    if len(inconsistent_limits) > 0:
+        print >> logfile, "Warning: input variables has heat_rate_max < heat_rate_min:"
+        for limits in inconsistent_limits:
+            print >> logfile, "  " + ertac_lib.nice_str(limits)
+
+    print >> logfile
+    print >> logfile, "Checking input variables for consistent NOx EF min/max."
+    # Check that NOx EF min <= NOx EF max.
+    inconsistent_limits = conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin,
+    nox_min_ef, nox_max_ef
+    FROM ertac_input_variables
+    WHERE nox_min_ef > nox_max_ef
+    ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall()
+    if len(inconsistent_limits) > 0:
+        print >> logfile, "Warning: input variables has nox_max_ef < nox_min_ef:"
+        for limits in inconsistent_limits:
+            print >> logfile, "  " + ertac_lib.nice_str(limits)
+
+    print >> logfile
+    print >> logfile, "Checking input variables for consistent SO2 EF min/max."
+    # Check that SO2 EF min <= SO2 EF max.
+    inconsistent_limits = conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin,
+    so2_min_ef, so2_max_ef
+    FROM ertac_input_variables
+    WHERE so2_min_ef > so2_max_ef
+    ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall()
+    if len(inconsistent_limits) > 0:
+        print >> logfile, "Warning: input variables has so2_max_ef < so2_min_ef:"
+        for limits in inconsistent_limits:
+            print >> logfile, "  " + ertac_lib.nice_str(limits)
+
     print >> logfile
     print >> logfile, "Checking input variables for consistent new unit sizes."
     # Check that new unit min size <= new unit max size.
@@ -946,7 +1089,6 @@ def check_input_variable_consistency(conn, logfile):
     FROM ertac_input_variables
     WHERE new_unit_max_size < new_unit_min_size
     ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall()
-
     if len(inconsistent_sizes) > 0:
         print >> logfile, "Warning: input variables has new_unit_max_size < new_unit_min_size:"
         for sizes in inconsistent_sizes:
@@ -1037,7 +1179,7 @@ def check_control_emissions_consistency(conn, base_year, logfile):
             print >> logfile, "  " + ertac_lib.nice_str(no_control)
 
 #jmj 10/24/2013 - adding a new function to check the new seasonal control table
-#it is nearly identical to check_control_emissions_consistency, except it make sure the 
+#it is nearly identical to check_control_emissions_consistency, except it make sure the
 #two new columns are also dates
 def check_seasonal_control_emissions_consistency(conn, base_year, future_year, logfile):
     """Check control/emissions for consistent dates, and presence of rate or efficiency.
@@ -1063,7 +1205,7 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
         for dates in inconsistent_dates:
             print >> logfile, "  " + ertac_lib.nice_str(dates)
 
-            
+
     # Where multiple factors exist for same pollutant at same unit, check that
     # dates do not overlap.
     heading_printed = False
@@ -1085,7 +1227,7 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
         (prev_start_month, prev_start_date, prev_end_month, prev_end_date) = factors.fetchone()
         if prev_start_month > prev_end_month or (prev_start_month == prev_end_month and prev_start_date >= prev_end_date):
             errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((prev_start_month, prev_start_date, prev_end_month, prev_end_date)) + " has a start date on or after the end date\n"
-                
+
         for (next_start_month, next_start_date, next_end_month, next_end_date) in factors.fetchall():
             if prev_end_month > next_start_month or (prev_end_month == next_start_month and prev_end_date >= next_start_date):
                 errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((prev_start_month, prev_start_date, prev_end_month, prev_end_date)) + " overlaps " + ertac_lib.nice_str((next_start_month, next_start_date, next_end_month, next_end_date)) + "\n"
@@ -1093,7 +1235,7 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
             (prev_start_month, prev_start_date, prev_end_month, prev_end_date) = (next_start_month, next_start_date, next_end_month, next_end_date)
             if prev_start_month > prev_end_month or (prev_start_month == prev_end_month and prev_start_date >= prev_end_date):
                 errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((prev_start_month, prev_start_date, prev_end_month, prev_end_date)) + " has a start date on or after the end date\n"
-            
+
     if errors != "":
         print >> logfile, "Warning: seasonal control/emissions has seasonal factors with missing or overlapping start/end dates:"
         print >> logfile, errors
@@ -1101,7 +1243,7 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
 
     errors = ""
     for (plant, unit, poll, ssm, ssd, sem, sed, fsdate, fedate) in conn.execute("""SELECT ece.orispl_code, ece.unitid, ece.pollutant_code,
-        season_start_month, season_start_date, season_end_month, season_end_date, 
+        season_start_month, season_start_date, season_end_month, season_end_date,
         ece.factor_start_date, ece.factor_end_date
         FROM ertac_seasonal_control_emissions esce
         INNER JOIN ertac_control_emissions ece
@@ -1109,17 +1251,17 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
         AND esce.unitid = ece.unitid
         AND esce.pollutant_code= ece.pollutant_code
         ORDER BY ece.orispl_code, ece.unitid, ece.pollutant_code""").fetchall():
-             
+
         if len(fsdate.split("-")) == 3:
             (fsy, fsm, fsd) = fsdate.split("-")
         else:
-            (fsy, fsm, fsd) = (base_year, 1,1)    
-           
+            (fsy, fsm, fsd) = (base_year, 1,1)
+
         if len(fedate.split("-")) == 3:
             (fey, fem, fed) = fedate.split("-")
         else:
             (fey, fem, fed) = (2030, 12,31)
-        
+
         #jmj convert this to actual date checks
         if int(future_year) > int(fsy) or (int(future_year) == int(fsy) and (ssm > int(fsm) or (ssm == int(fsm) and ssd >= int(fsd)))):
             if int(future_year) < int(fey) or (int(future_year) == int(fey) and (ssm < int(fem) or (ssm == int(fem) and ssd <= int(fed)))):
@@ -1128,12 +1270,12 @@ def check_seasonal_control_emissions_consistency(conn, base_year, future_year, l
             if int(future_year) < int(fey) or (int(future_year) == int(fey) and (sem < int(fem) or (sem == int(fem) and sed <= int(fed)))):
                 if int(future_year) > int(fsy) or (int(future_year) == int(fsy) and (sem > int(fsm) or (sem == int(fsm) and sed >= int(fsd)))):
                     errors+= "  " + ertac_lib.nice_str((plant, unit, poll)) + ": " + ertac_lib.nice_str((ssm, ssd, sem, sed)) + " has a date that overlaps an entry in the conrol file\n"
-                 
-                
+
+
     if errors != "":
         print >> logfile, "Warning: seasonal control/emissions has seasonal factors that overlap entries in the control file:"
         print >> logfile, errors
-        
+
     # 20120423 Added warning for check that control/emissions data is for future years.
     day_after_base_year = ertac_lib.first_day_after(base_year)
 
@@ -1207,6 +1349,58 @@ def check_group_total_listing_consistency(conn, logfile):
 
 
 
+def check_demand_transfer_consistency(conn, logfile):
+    """Check demand transfers for consistent use of origin and destination at each hour.
+
+    Keyword arguments:
+    conn -- a valid database connection where the data is stored
+    logfile -- file where logging messages will be written
+
+    """
+    print >> logfile
+    print >> logfile, "Checking demand transfers for consistent hourly origin/destination."
+
+    # The table/index structure allows multiple entries for the same origin and
+    # hour with different destinations, and for the same hour and destination
+    # with different origins, but prevents multiple entries all having the same
+    # origin+hour+destination in order to avoid redundant excess transfers.
+    # Here we check for the same region+fuel being used for an origin and for a
+    # destination at the same hour, because it should perform only one role at a
+    # given time.  Find intersection of origin region/fuel/hour with destination
+    # region/fuel/hour and list any matches from both sides.
+    conn.executescript("""CREATE TEMPORARY TABLE both_ways
+    (region TEXT NOT NULL COLLATE NOCASE,
+    fuel TEXT NOT NULL COLLATE NOCASE,
+    hour INTEGER NOT NULL,
+    PRIMARY KEY (region, fuel, hour));
+
+    INSERT INTO both_ways
+    SELECT origin_region, origin_fuel, calendar_hour
+    FROM ertac_demand_transfers
+    INTERSECT
+    SELECT destination_region, destination_fuel, calendar_hour
+    FROM ertac_demand_transfers;""")
+
+    inconsistent_roles = conn.execute("""SELECT bw1.rowid AS both, 'Orig.', edt1.*
+    FROM both_ways bw1
+    JOIN ertac_demand_transfers edt1
+    ON bw1.region = edt1.origin_region AND bw1.fuel = edt1.origin_fuel AND bw1.hour = edt1.calendar_hour
+    UNION
+    SELECT bw2.rowid, 'Dest.', edt2.*
+    FROM both_ways bw2
+    JOIN ertac_demand_transfers edt2
+    ON bw2.region = edt2.destination_region AND bw2.fuel = edt2.destination_fuel AND bw2.hour = edt2.calendar_hour
+    ORDER BY both, origin_region, origin_fuel, calendar_hour, destination_region, destination_fuel""").fetchall()
+
+    if len(inconsistent_roles) > 0:
+        print >> logfile, "Warning: ertac_demand_transfers has same region+fuel in inconsistent roles at same hour:"
+        for transfer in inconsistent_roles:
+            print >> logfile, "  " + ertac_lib.nice_str(transfer)
+
+    conn.execute("""DROP TABLE both_ways""")
+
+
+
 def remove_non_egu_data(conn, logfile):
     """1.01: Remove hourly data from units marked in UAF as non-EGU.
 
@@ -1248,6 +1442,8 @@ def check_initial_data_ranges(conn, logfile):
     ertac_lib.check_data_ranges('ertac_initial_uaf', conn, ertac_tables.uaf_columns, logfile)
     ertac_lib.check_data_ranges('ertac_growth_rates', conn, ertac_tables.growth_rate_columns, logfile)
     ertac_lib.check_data_ranges('ertac_input_variables', conn, ertac_tables.input_variable_columns, logfile)
+    # For V2, added range checks for new optional demand transfers.
+    ertac_lib.check_data_ranges('ertac_demand_transfers', conn, ertac_tables.demand_transfer_columns, logfile)
     ertac_lib.check_data_ranges('ertac_control_emissions', conn, ertac_tables.control_emission_columns, logfile)
     #jmj 10/24/2013 add the seasonal control check
     ertac_lib.check_data_ranges('ertac_seasonal_control_emissions', conn, ertac_tables.seasonal_control_emission_columns, logfile)
@@ -1256,7 +1452,7 @@ def check_initial_data_ranges(conn, logfile):
 
 
 def insert_seasonal_controls(conn, base_year, future_year, logfile):
-    """Convert seasonal controls into annual controls and insert into the file.
+    """1.04: Convert seasonal controls into annual controls and insert into the file.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -1267,7 +1463,7 @@ def insert_seasonal_controls(conn, base_year, future_year, logfile):
     """
     print >> logfile
     print >> logfile, "Inserting seasonal controls into annual controls:"
-    
+
     rows_affected = conn.execute("""INSERT INTO calc_control_emissions
     SELECT orispl_code, unitid, season_start_month || '/' || season_start_date || '/' || ? , season_end_month || '/' || season_end_date || '/' || ?, pollutant_code, emission_rate, control_efficiency, control_programs, control_description, submitter_email
     FROM ertac_seasonal_control_emissions
@@ -1275,7 +1471,7 @@ def insert_seasonal_controls(conn, base_year, future_year, logfile):
     AND factor_end_date >= ?
     AND factor_start_date >= ?""", [future_year, future_year, ertac_lib.first_day_after(future_year), ertac_lib.first_day_of(future_year), ertac_lib.first_day_after(base_year)]).rowcount
     print >> logfile, "Inserted", rows_affected, "seasonal controls."
-    
+
 def copy_base_year_hourly(conn, base_year, logfile):
     """Copy CAMD hourly data from base year, adding region/fuel bin from UAF.
 
@@ -1294,9 +1490,62 @@ def copy_base_year_hourly(conn, base_year, logfile):
     # during the base year, in which case part of the year's data will link with
     # the earlier fuel bin, and part with the later, depending on the transition
     # dates listed in the UAF.
+
+    #jmj 9/18/14 convert the gross load in calc_hourly_base from MW to MW-hr
+    # RW 9/17/2015 Doris and Jin verified that SLOAD should be scaled like GLOAD
+    # for fractional hours.
+    # RW 9/25/2015 Doris got confirmation that heat input has already been converted
+    # from rate (mmbtu/hr) to input amount (mmbtu) during the hour and doesn't need
+    # further adjustment for fractional hours.
     conn.execute("DELETE FROM calc_hourly_base")
     rows_affected = conn.execute("""INSERT INTO calc_hourly_base
-    SELECT uaf.ertac_region, uaf.ertac_fuel_unit_type_bin, hourly.*
+        (ertac_region,
+        ertac_fuel_unit_type_bin,
+        state,
+        facility_name,
+        orispl_code,
+        unitid,
+        op_date,
+        op_hour,
+        op_time,
+        gload,
+        sload,
+        so2_mass,
+        so2_mass_flag,
+        so2_rate,
+        so2_rate_flag,
+        nox_rate,
+        nox_rate_flag,
+        nox_mass,
+        nox_mass_flag,
+        co2_mass,
+        co2_mass_flag,
+        co2_rate,
+        co2_rate_flag,
+        heat_input)
+    SELECT uaf.ertac_region, uaf.ertac_fuel_unit_type_bin,
+        hourly.state,
+        hourly.facility_name,
+        hourly.orispl_code,
+        hourly.unitid,
+        hourly.op_date,
+        hourly.op_hour,
+        hourly.op_time,
+        hourly.gload * hourly.op_time,
+        hourly.sload * hourly.op_time,
+        hourly.so2_mass,
+        hourly.so2_mass_flag,
+        hourly.so2_rate,
+        hourly.so2_rate_flag,
+        hourly.nox_rate,
+        hourly.nox_rate_flag,
+        hourly.nox_mass,
+        hourly.nox_mass_flag,
+        hourly.co2_mass,
+        hourly.co2_mass_flag,
+        hourly.co2_rate,
+        hourly.co2_rate_flag,
+        hourly.heat_input
     FROM calc_updated_uaf uaf
     JOIN camd_hourly_base hourly
     ON uaf.orispl_code = hourly.orispl_code
@@ -1322,8 +1571,58 @@ def copy_base_year_noncamd_hourly(conn, base_year, logfile):
     # this section adds state-supplied non-CAMD data where no CAMD data exists,
     # and updates any rows where non-CAMD values will replace the CAMD records
     # for that unit and time.
+
+    #jmj 9/18/14 convert the gross load in calc_hourly_base from MW to MW-hr
+    # RW 9/17/2015 Doris and Jin verified that SLOAD should be scaled like GLOAD
+    # for fractional hours.
     rows_affected = conn.execute("""INSERT OR REPLACE INTO calc_hourly_base
-    SELECT uaf.ertac_region, uaf.ertac_fuel_unit_type_bin, hourly.*
+        (ertac_region,
+        ertac_fuel_unit_type_bin,
+        state,
+        facility_name,
+        orispl_code,
+        unitid,
+        op_date,
+        op_hour,
+        op_time,
+        gload,
+        sload,
+        so2_mass,
+        so2_mass_flag,
+        so2_rate,
+        so2_rate_flag,
+        nox_rate,
+        nox_rate_flag,
+        nox_mass,
+        nox_mass_flag,
+        co2_mass,
+        co2_mass_flag,
+        co2_rate,
+        co2_rate_flag,
+        heat_input)
+    SELECT uaf.ertac_region, uaf.ertac_fuel_unit_type_bin,
+        hourly.state,
+        hourly.facility_name,
+        hourly.orispl_code,
+        hourly.unitid,
+        hourly.op_date,
+        hourly.op_hour,
+        hourly.op_time,
+        hourly.gload * hourly.op_time,
+        hourly.sload * hourly.op_time,
+        hourly.so2_mass,
+        hourly.so2_mass_flag,
+        hourly.so2_rate,
+        hourly.so2_rate_flag,
+        hourly.nox_rate,
+        hourly.nox_rate_flag,
+        hourly.nox_mass,
+        hourly.nox_mass_flag,
+        hourly.co2_mass,
+        hourly.co2_mass_flag,
+        hourly.co2_rate,
+        hourly.co2_rate_flag,
+        hourly.heat_input
     FROM calc_updated_uaf uaf
     JOIN ertac_hourly_noncamd hourly
     ON uaf.orispl_code = hourly.orispl_code
@@ -1332,7 +1631,34 @@ def copy_base_year_noncamd_hourly(conn, base_year, logfile):
     AND uaf.offline_start_date > hourly.op_date""").rowcount
     print >> logfile, "Copied", rows_affected, "rows of non-CAMD hourly data."
 
+def check_uaf_retired_units_with_base_year(conn, base_year, logfile):
+    """Check UAF for retired units in region/fuel with base-year activity after retirement.
 
+    Keyword arguments:
+    conn -- a valid database connection where the data is stored
+    base_year -- the base year for the projection
+    logfile -- file where logging messages will be written
+
+    """
+    print >> logfile
+    print >> logfile, "Checking UAF for retired units in region/fuel with base-year activity after retirement."
+
+    # Need to know all retried units; i.e. retired before end of base year
+    for retired_unit in conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, offline_start_date
+        FROM calc_updated_uaf
+        WHERE camd_by_hourly_data_type NOT IN ('Non-EGU')
+        AND offline_start_date < ?""",
+        [ertac_lib.first_day_after(base_year)]).fetchall():
+
+        retired_unit_with_base_year = conn.execute("""SELECT count(*)
+        FROM calc_hourly_base
+        WHERE ertac_region = ?
+        AND ertac_fuel_unit_type_bin = ?
+        AND orispl_code = ?
+        AND unitid = ?
+        and op_date > ? """, retired_unit).fetchall()
+        if len(retired_unit_with_base_year) > 0:
+            print >> logfile, "Unit retired but has base year data after retirement  " + ertac_lib.nice_str(retired_unit)
 
 def check_uaf_new_units_no_base_year(conn, base_year, future_year, logfile):
     """Check UAF for new units in region/fuel with no base-year activity.
@@ -1482,8 +1808,240 @@ def delete_feb29_data(conn, base_year, logfile):
 
 
 
+def calc_unit_stats(conn, logfile):
+    """2.02: Calculate unit operating statistics and store results in UAF.
+
+    Keyword arguments:
+    conn -- a valid database connection where the data is stored
+    logfile -- file where logging messages will be written
+
+    """
+    print >> logfile
+    print >> logfile, "Calculating unit operating statistics to store in UAF."
+
+    conn.executescript("""CREATE TEMPORARY TABLE region_fuel_plant_unit
+    (region TEXT NOT NULL COLLATE NOCASE,
+    fuel TEXT NOT NULL COLLATE NOCASE,
+    plant TEXT NOT NULL COLLATE NOCASE,
+    unit TEXT NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (region, fuel, plant, unit));
+
+    CREATE TEMPORARY TABLE unit_hourly
+    (op_date TEXT NOT NULL,
+    op_hour INTEGER NOT NULL,
+    gload REAL,
+    so2_mass REAL,
+    so2_rate REAL,
+    nox_rate REAL,
+    nox_mass REAL,
+    heat_input REAL,
+    heat_rate REAL,
+    PRIMARY KEY (op_date, op_hour));
+
+    INSERT INTO region_fuel_plant_unit
+    SELECT DISTINCT ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid
+    FROM calc_hourly_base;""")
+
+    for (region, fuel, plant, unit) in conn.execute("""SELECT region, fuel, plant, unit
+    FROM region_fuel_plant_unit
+    ORDER BY region, fuel, plant, unit""").fetchall():
+        # Get Ozone season, hard limits, and SD multipliers from input variables.
+        (base_year, ozone_start_date, ozone_end_date, heat_rate_min, heat_rate_max, heat_rate_stdev,
+        nox_min_ef, nox_max_ef, nox_stdev, so2_min_ef, so2_max_ef, so2_stdev) = conn.execute("""SELECT
+        base_year, ozone_start_date, ozone_end_date, heat_rate_min, heat_rate_max, heat_rate_stdev,
+        nox_min_ef, nox_max_ef, nox_stdev, so2_min_ef, so2_max_ef, so2_stdev
+        FROM calc_input_variables
+        WHERE ertac_region = ?
+        AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
+
+        # Get hourly data for unit and calculate hourly heat rates where possible.
+        conn.execute("""DELETE FROM unit_hourly""")
+        conn.execute("""INSERT INTO unit_hourly
+        (op_date, op_hour, gload, so2_mass, so2_rate, nox_rate, nox_mass, heat_input)
+        SELECT op_date, op_hour, gload, so2_mass, so2_rate, nox_rate, nox_mass, heat_input
+        FROM calc_hourly_base
+        WHERE ertac_region = ?
+        AND ertac_fuel_unit_type_bin = ?
+        AND orispl_code = ?
+        AND unitid = ?""", (region, fuel, plant, unit))
+        conn.execute("""UPDATE unit_hourly
+        SET heat_rate = 1000.0 * heat_input / gload
+        WHERE heat_input > 0.0
+        AND gload > 0.0""")
+
+        # We only want statistics for positive rates, ignoring zeros, so the
+        # population sizes may vary and each must be counted separately.
+        # Note: the _sd values are sample standard deviations; the _stdev values
+        # are multiplier factors to define an interval around the mean.
+        rate_list = conn.execute("""SELECT so2_rate FROM unit_hourly WHERE so2_rate > 0.0""").fetchall()
+        (so2_mean, so2_sd) = calc_list_stats(rate_list)
+        rate_list = conn.execute("""SELECT nox_rate FROM unit_hourly WHERE nox_rate > 0.0""").fetchall()
+        (nox_mean, nox_sd) = calc_list_stats(rate_list)
+        rate_list = conn.execute("""SELECT heat_rate FROM unit_hourly WHERE heat_rate > 0.0""").fetchall()
+        (hr_mean, hr_sd) = calc_list_stats(rate_list)
+
+        if heat_rate_stdev is not None and hr_sd is not None:
+            heat_rate_lower_stat = hr_mean - heat_rate_stdev * hr_sd
+            heat_rate_upper_stat = hr_mean + heat_rate_stdev * hr_sd
+        else:
+            (heat_rate_lower_stat, heat_rate_upper_stat) = (None, None)
+
+        if nox_stdev is not None and nox_sd is not None:
+            nox_ef_lower_stat = nox_mean - nox_stdev * nox_sd
+            nox_ef_upper_stat = nox_mean + nox_stdev * nox_sd
+        else:
+            (nox_ef_lower_stat, nox_ef_upper_stat) = (None, None)
+
+        if so2_stdev is not None and so2_sd is not None:
+            so2_ef_lower_stat = so2_mean - so2_stdev * so2_sd
+            so2_ef_upper_stat = so2_mean + so2_stdev * so2_sd
+        else:
+            (so2_ef_lower_stat, so2_ef_upper_stat) = (None, None)
+
+        # Warn if hard limits and statistical limits have disjoint ranges.
+        if ((heat_rate_max is not None and heat_rate_lower_stat is not None and heat_rate_max < heat_rate_lower_stat)
+            or
+            (heat_rate_min is not None and heat_rate_upper_stat is not None and heat_rate_min > heat_rate_upper_stat)):
+            print >> logfile, ("Warning: unit has disjoint hard limits and statistical limits on heat rate:  "
+                               + ertac_lib.nice_str((region, fuel, plant, unit, heat_rate_min, heat_rate_max,
+                                                     heat_rate_lower_stat, heat_rate_upper_stat)))
+
+        if ((nox_max_ef is not None and nox_ef_lower_stat is not None and nox_max_ef < nox_ef_lower_stat)
+            or
+            (nox_min_ef is not None and nox_ef_upper_stat is not None and nox_min_ef > nox_ef_upper_stat)):
+            print >> logfile, ("Warning: unit has disjoint hard limits and statistical limits on NOx rate:  "
+                               + ertac_lib.nice_str((region, fuel, plant, unit, nox_min_ef, nox_max_ef,
+                                                     nox_ef_lower_stat, nox_ef_upper_stat)))
+
+        if ((so2_max_ef is not None and so2_ef_lower_stat is not None and so2_max_ef < so2_ef_lower_stat)
+            or
+            (so2_min_ef is not None and so2_ef_upper_stat is not None and so2_min_ef > so2_ef_upper_stat)):
+            print >> logfile, ("Warning: unit has disjoint hard limits and statistical limits on SO2 rate:  "
+                               + ertac_lib.nice_str((region, fuel, plant, unit, so2_min_ef, so2_max_ef,
+                                                     so2_ef_lower_stat, so2_ef_upper_stat)))
+
+        # Calculate annual and OS/non-OS average rates from total annual and
+        # seasonal activity.
+        (ann_gload, ann_so2, ann_nox, ann_hi) = conn.execute("""SELECT SUM(gload),
+            SUM(so2_mass), SUM(nox_mass), SUM(heat_input) FROM unit_hourly""").fetchone()
+        os_start = ertac_lib.convert_ozone_date(ozone_start_date, base_year)
+        os_end = ertac_lib.convert_ozone_date(ozone_end_date, base_year)
+        (os_gload, os_so2, os_nox, os_hi) = conn.execute("""SELECT SUM(gload),
+            SUM(so2_mass), SUM(nox_mass), SUM(heat_input) FROM unit_hourly
+            WHERE op_date BETWEEN ? AND ?""", (os_start, os_end)).fetchone()
+        (nonos_gload, nonos_so2, nonos_nox, nonos_hi) = conn.execute("""SELECT SUM(gload),
+            SUM(so2_mass), SUM(nox_mass), SUM(heat_input) FROM unit_hourly
+            WHERE op_date NOT BETWEEN ? AND ?""", (os_start, os_end)).fetchone()
+
+        if ann_gload is not None and ann_gload > 0.0 and ann_hi is not None:
+            ann_heat_rate = 1000.0 * ann_hi / ann_gload
+        else:
+            ann_heat_rate = None
+
+        if ann_hi is not None and ann_hi > 0.0 and ann_so2 is not None:
+            ann_so2_rate = ann_so2 / ann_hi
+        else:
+            ann_so2_rate = None
+
+        if ann_hi is not None and ann_hi > 0.0 and ann_nox is not None:
+            ann_nox_rate = ann_nox / ann_hi
+        else:
+            ann_nox_rate = None
+
+        if os_gload is not None and os_gload > 0.0 and os_hi is not None:
+            os_heat_rate = 1000.0 * os_hi / os_gload
+        else:
+            os_heat_rate = None
+
+        if os_hi is not None and os_hi > 0.0 and os_so2 is not None:
+            os_so2_rate = os_so2 / os_hi
+        else:
+            os_so2_rate = None
+
+        if os_hi is not None and os_hi > 0.0 and os_nox is not None:
+            os_nox_rate = os_nox / os_hi
+        else:
+            os_nox_rate = None
+
+        if nonos_gload is not None and nonos_gload > 0.0 and nonos_hi is not None:
+            nonos_heat_rate = 1000.0 * nonos_hi / nonos_gload
+        else:
+            nonos_heat_rate = None
+
+        if nonos_hi is not None and nonos_hi > 0.0 and nonos_so2 is not None:
+            nonos_so2_rate = nonos_so2 / nonos_hi
+        else:
+            nonos_so2_rate = None
+
+        if nonos_hi is not None and nonos_hi > 0.0 and nonos_nox is not None:
+            nonos_nox_rate = nonos_nox / nonos_hi
+        else:
+            nonos_nox_rate = None
+
+        # Store limits and average rates in UAF.
+        conn.execute("""UPDATE calc_updated_uaf
+        SET heat_rate_lower_limit = ?,
+        heat_rate_upper_limit = ?,
+        heat_rate_lower_stat = ?,
+        heat_rate_upper_stat = ?,
+        heat_rate_avg = ?,
+        heat_rate_os_avg = ?,
+        heat_rate_nonos_avg = ?,
+        nox_ef_lower_limit = ?,
+        nox_ef_upper_limit = ?,
+        nox_ef_lower_stat = ?,
+        nox_ef_upper_stat = ?,
+        nox_ef_avg = ?,
+        nox_ef_os_avg = ?,
+        nox_ef_nonos_avg = ?,
+        so2_ef_lower_limit = ?,
+        so2_ef_upper_limit = ?,
+        so2_ef_lower_stat = ?,
+        so2_ef_upper_stat = ?,
+        so2_ef_avg = ?,
+        so2_ef_os_avg = ?,
+        so2_ef_nonos_avg = ?
+        WHERE orispl_code = ?
+        AND unitid = ?
+        AND ertac_fuel_unit_type_bin = ?""", (heat_rate_min, heat_rate_max,
+        heat_rate_lower_stat, heat_rate_upper_stat,
+        ann_heat_rate, os_heat_rate, nonos_heat_rate,
+        nox_min_ef, nox_max_ef, nox_ef_lower_stat, nox_ef_upper_stat,
+        ann_nox_rate, os_nox_rate, nonos_nox_rate,
+        so2_min_ef, so2_max_ef, so2_ef_lower_stat, so2_ef_upper_stat,
+        ann_so2_rate, os_so2_rate, nonos_so2_rate,
+        plant, unit, fuel))
+
+    conn.executescript("""DROP TABLE region_fuel_plant_unit;
+    DROP TABLE unit_hourly;""")
+
+
+
+def calc_list_stats(some_list):
+    """Calculate mean and sample standard deviation of a list of numbers which are each in 1-element tuples.
+
+    Keyword arguments:
+    some_list -- the list of numbers
+
+    Returns tuple of (mean, sd)
+
+    """
+    n = 1.0 * len(some_list)
+    if n < 1.0:
+        return (None, None)
+    # Python docs say that math.fsum() is more accurate than regular sum().
+    mean = math.fsum(x[0] for x in some_list) / n
+    if n < 2.0:
+        return (mean, None)
+    sum_square_dev = math.fsum((x[0] - mean)**2 for x in some_list)
+    sample_var = sum_square_dev / (n - 1.0)
+    sample_sd = math.sqrt(sample_var)
+    return (mean, sample_sd)
+
+
+
 def fill_temporal_hierarchies(conn, logfile):
-    """1.04: Calculate relative rankings of each hour's total generation, within region/fuel.
+    """1.05: Calculate relative rankings of each hour's total generation, within region/fuel.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -1581,7 +2139,7 @@ def fill_temporal_hierarchies(conn, logfile):
 
 
 def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
-    """1.05, 1.06: Fill in the remaining hours of any partially-reported units.
+    """1.06, 1.07: Fill in the remaining hours of any partially-reported units.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -1617,8 +2175,8 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
         return
 
     (max_hours,) = hour_result
-    
-    #jmj 5/2/2014 warn about units marked as partial year reporters that are full year reporters 
+
+    #jmj 5/2/2014 warn about units marked as partial year reporters that are full year reporters
     non_partial_reporters = conn.execute("""SELECT hourly_summary.ertac_region, hourly_summary.ertac_fuel_unit_type_bin, hourly_summary.orispl_code, hourly_summary.unitid
     FROM hourly_summary
     LEFT JOIN calc_updated_uaf
@@ -1632,8 +2190,8 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
         print >> logfile, "  Warning: units marked as Partial-Year Reporters reported for the Full Year"
         for plant in non_partial_reporters:
             print >> logfile, "  " + ertac_lib.nice_str(plant)
-    
-    
+
+
     # Loop over all units with partial data, looking up their UAF status to
     # determine how to fill remainder.
     partial_reporters = conn.execute("""SELECT ertac_region, ertac_fuel_unit_type_bin,
@@ -1689,7 +2247,7 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
         WHERE op_date >= ?
         AND op_date < ?""", (online, offline))
         (active_unrecorded_hours,) = conn.execute("SELECT COUNT(*) FROM active_unrecorded_hours").fetchone()
-        
+
         #jmj add pr message suppression option
         if not suppress_pr_messages:
             print >> logfile, "  Unit: " + ertac_lib.nice_str((plant, unit, fuel)) \
@@ -1698,7 +2256,7 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
             print >> logfile, "    UAF Annual_HI_Partials:", annual_hi, ", Reported heat total:", heat_total
         else:
             print >> logfile, "  Unit: " + ertac_lib.nice_str((plant, unit, fuel)) + " is being treated as a Partial-Year Reporter"
-            
+
         if annual_hi is not None and heat_total is not None and annual_hi > heat_total and active_unrecorded_hours > 0:
             # Divide remaining HI evenly among hours, for flat operation.
             # Set hourly GLOAD and emissions as fractions of recorded totals,
@@ -1783,8 +2341,8 @@ def fill_base_year_calc_generation_parms(conn, base_year, future_year, logfile):
     # different name for the allocation order column, but the same process is
     # used for all of them.
     conn.execute("DELETE FROM calc_generation_parms")
-    for (hier_tbl, order_col) in [('calc_1hour_hierarchy', 'one_hour_allocation_order'), 
-                                  ('calc_6hour_hierarchy', 'six_hour_allocation_order'), 
+    for (hier_tbl, order_col) in [('calc_1hour_hierarchy', 'one_hour_allocation_order'),
+                                  ('calc_6hour_hierarchy', 'six_hour_allocation_order'),
                                   ('calc_24hour_hierarchy', 'twentyfour_hour_allocation_order')]:
         # Can't use SQL parameter substition for object names, so have to build
         # statement partially using string concatenation.
@@ -1851,58 +2409,66 @@ def calculate_non_peak_growth_factors(conn, logfile):
     FROM calc_growth_rates
     WHERE transition_formula = 'Linear'
     ORDER BY ertac_region, ertac_fuel_unit_type_bin""").fetchall():
+        #jmj 9/18/14 add a fix to set the nonpeak factor equal to the average if the peak and average are the same
+        if avg_factor == peak_factor:
+               # Update current row of calc_growth_rates.
+                conn.execute("""UPDATE calc_growth_rates
+                SET non_peak_growth_factor = ?
+                WHERE ertac_region = ?
+                AND ertac_fuel_unit_type_bin = ?""", (avg_factor, region, fuel))
+        else:
 
-        # We need annual total generation (summed over hours within current
-        # region/fuel) from base year.
-        (base_annual_gen,) = conn.execute("""SELECT SUM(base_actual_generation)
-        FROM calc_generation_parms
-        WHERE ertac_region = ?
-        AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
-        if base_annual_gen:
-            # Can only solve for growth factor if base year had some generation
-            # for this region/fuel.
-            # Use peak factor and average factor as first two guesses for secant
-            # method.  Want future_gen = base_gen * avg_factor, so compare
-            # estimated future total against target.
-            x0 = peak_factor
-            y0 = estimate_future_generation(conn, region, fuel, peak_factor, x0, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
-            x = avg_factor
-            i = 0
-            while True:
-                i = i + 1
-                y = estimate_future_generation(conn, region, fuel, peak_factor, x, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
-                if abs(y) <= 1e-12 * (1 + abs(y0)):  # Small enough Y result, so stop.
-                    break
-                if y == y0: # Flat line, can not proceed.
-                    logging.warn("Secant root-finding failed: impending division by zero for " + ertac_lib.nice_str((region, fuel)))
-                    print >> logfile, "Warning: Secant root-finding failed: impending division by zero for " + ertac_lib.nice_str((region, fuel))
-                    print >> logfile, "  Transition hours to formula and to non-peak rate may need to be set earlier."
-                    break
-                # Find delta X for next improved guess.
-                dx = - y * (x - x0) / (y - y0)
-                if abs(dx) <= 1e-12 * max(abs(x0), abs(x)):  # X values close enough, so stop.
-                    break
-                if i > 10:  # Avoid runaway non-convergence.
-                    logging.warn("Secant root-finding failed: excess iterations for " + ertac_lib.nice_str((region, fuel)))
-                    print >> logfile, "Warning: Secant root-finding failed: excess iterations for " + ertac_lib.nice_str((region, fuel))
-                    break
-                # If we didn't hit any termination condition, repeat for next improved estimate.
-                (x0, y0, x) = (x, y, x + dx)
-
-            # If numerical solution is physically impossible, reset negative
-            # factor to 0, recompute all resulting hourly growth, and warn.
-            if x < 0.0:
-                x = 0.0
-                y = estimate_future_generation(conn, region, fuel, peak_factor, x, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
-                logging.warn("Impossible negative non-peak growth factor reset to 0.0 for " + ertac_lib.nice_str((region, fuel)))
-                print >> logfile, "Warning: Impossible negative non-peak growth factor reset to 0.0 for " + ertac_lib.nice_str((region, fuel))
-                print >> logfile, "  Average growth factor is too low to be reached."
-
-            # Update current row of calc_growth_rates.
-            conn.execute("""UPDATE calc_growth_rates
-            SET non_peak_growth_factor = ?
+            # We need annual total generation (summed over hours within current
+            # region/fuel) from base year.
+            (base_annual_gen,) = conn.execute("""SELECT SUM(base_actual_generation)
+            FROM calc_generation_parms
             WHERE ertac_region = ?
-            AND ertac_fuel_unit_type_bin = ?""", (x, region, fuel))
+            AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
+            if base_annual_gen:
+                # Can only solve for growth factor if base year had some generation
+                # for this region/fuel.
+                # Use peak factor and average factor as first two guesses for secant
+                # method.  Want future_gen = base_gen * avg_factor, so compare
+                # estimated future total against target.
+                x0 = peak_factor
+                y0 = estimate_future_generation(conn, region, fuel, peak_factor, x0, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
+                x = avg_factor
+                i = 0
+                while True:
+                    i = i + 1
+                    y = estimate_future_generation(conn, region, fuel, peak_factor, x, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
+                    if abs(y) <= 1e-12 * (1 + abs(y0)):  # Small enough Y result, so stop.
+                        break
+                    if y == y0: # Flat line, can not proceed.
+                        logging.warn("Secant root-finding failed: impending division by zero for " + ertac_lib.nice_str((region, fuel)))
+                        print >> logfile, "Warning: Secant root-finding failed: impending division by zero for " + ertac_lib.nice_str((region, fuel))
+                        print >> logfile, "  Transition hours to formula and to non-peak rate may need to be set earlier."
+                        break
+                    # Find delta X for next improved guess.
+                    dx = - y * (x - x0) / (y - y0)
+                    if abs(dx) <= 1e-12 * max(abs(x0), abs(x)):  # X values close enough, so stop.
+                        break
+                    if i > 10:  # Avoid runaway non-convergence.
+                        logging.warn("Secant root-finding failed: excess iterations for " + ertac_lib.nice_str((region, fuel)))
+                        print >> logfile, "Warning: Secant root-finding failed: excess iterations for " + ertac_lib.nice_str((region, fuel))
+                        break
+                    # If we didn't hit any termination condition, repeat for next improved estimate.
+                    (x0, y0, x) = (x, y, x + dx)
+
+                # If numerical solution is physically impossible, reset negative
+                # factor to 0, recompute all resulting hourly growth, and warn.
+                if x < 0.0:
+                    x = 0.0
+                    y = estimate_future_generation(conn, region, fuel, peak_factor, x, peak_hour, nonpeak_hour) - base_annual_gen * avg_factor
+                    logging.warn("Impossible negative non-peak growth factor reset to 0.0 for " + ertac_lib.nice_str((region, fuel)))
+                    print >> logfile, "Warning: Impossible negative non-peak growth factor reset to 0.0 for " + ertac_lib.nice_str((region, fuel))
+                    print >> logfile, "  Average growth factor is too low to be reached."
+
+                # Update current row of calc_growth_rates.
+                conn.execute("""UPDATE calc_growth_rates
+                SET non_peak_growth_factor = ?
+                WHERE ertac_region = ?
+                AND ertac_fuel_unit_type_bin = ?""", (x, region, fuel))
 
 
 
@@ -1961,7 +2527,7 @@ def compute_linear_formula_growth_rate(peak_factor, nonpeak_factor, peak_hour, n
 
 
 def calculate_future_generation_growth(conn, logfile):
-    """1.07: Calculate future hourly growth and generation, based on estimated growth factors.
+    """1.08: Calculate future hourly growth and generation, based on estimated growth factors.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -1996,8 +2562,60 @@ def calculate_future_generation_growth(conn, logfile):
 
 
 
+def update_calc_generation_parms_transfers(conn, logfile):
+    """Update estimated future generation to include demand transfers.
+
+    Keyword arguments:
+    conn -- a valid database connection where the data is stored
+    logfile -- file where logging messages will be written
+
+    """
+    # Fill in all hourly rows in calc_generation_parms with calendar_hour value,
+    # and include any net demand transfer for every region/fuel/hour where some
+    # demand transfer has been specified.
+    conn.executescript("""UPDATE calc_generation_parms
+    SET calendar_hour = (SELECT calendar_hours.calendar_hour
+    FROM calendar_hours
+    WHERE calendar_hours.op_date = calc_generation_parms.op_date
+    AND calendar_hours.op_hour = calc_generation_parms.op_hour);
+
+    UPDATE calc_generation_parms
+    SET net_demand_transfer = (SELECT net_demand_change
+    FROM calc_demand_transfer_summary
+    WHERE calc_demand_transfer_summary.transfer_region = calc_generation_parms.ertac_region
+    AND calc_demand_transfer_summary.transfer_fuel = calc_generation_parms.ertac_fuel_unit_type_bin
+    AND calc_demand_transfer_summary.calendar_hour = calc_generation_parms.calendar_hour);
+
+    UPDATE calc_generation_parms
+    SET net_demand_transfer = 0
+    WHERE net_demand_transfer IS NULL;""")
+
+
+#jmj 11/20/2013 adding base year operating calculations
+#jmj 9/17/2014 changed the methodology to sum op_time
+def calculate_base_year_op_hours(conn, logfile):
+    """2.03: Calculate base year hours of operation.
+
+    Keyword arguments:
+    conn -- a valid database connection where the data is stored
+    logfile -- file where logging messages will be written
+
+    """
+    print >> logfile
+    print >> logfile, "Calculating base year hours of operation."
+    for (hours, fuel, plant, unit) in conn.execute("""SELECT sum(op_time), ertac_fuel_unit_type_bin, orispl_code, unitid
+    FROM calc_hourly_base
+    GROUP BY orispl_code, unitid""").fetchall():
+        if hours:
+            conn.execute("""UPDATE calc_updated_uaf
+                    SET operating_hours_by = ?
+                    WHERE orispl_code = ?
+                    AND unitid = ?
+                    AND ertac_fuel_unit_type_bin = ?""", (hours, plant, unit, fuel))
+
+
 def calculate_heat_rates(conn, future_year, logfile):
-    """2.02: Calculate average heat rate and update ERTAC heat rate.
+    """2.04: Calculate average heat rate and update ERTAC heat rate.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -2039,7 +2657,7 @@ def calculate_heat_rates(conn, future_year, logfile):
     # jmj updated to exclude Non-EGU's and retired units
     units_no_heat_rate = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin
     FROM calc_updated_uaf
-    WHERE (ertac_heat_rate IS NULL OR ertac_heat_rate = 0.0) 
+    WHERE (ertac_heat_rate IS NULL OR ertac_heat_rate = 0.0)
     AND camd_by_hourly_data_type NOT IN ('Non-EGU')
     AND offline_start_date > ?
     ORDER BY orispl_code, unitid, ertac_fuel_unit_type_bin""", [ertac_lib.first_day_of(future_year)]).fetchall()
@@ -2048,32 +2666,9 @@ def calculate_heat_rates(conn, future_year, logfile):
         print >> logfile, "Warning: units with no ERTAC_HEAT_RATE:"
         for unusable_unit in units_no_heat_rate:
             print >> logfile, "  " + ertac_lib.nice_str(unusable_unit)
-
-
-#jmj 11/20/2013 adding base year operating calculations
-def calculate_base_year_op_hours(conn, logfile):
-    """Calculate base year hours of operation.
-
-    Keyword arguments:
-    conn -- a valid database connection where the data is stored
-    logfile -- file where logging messages will be written
-
-    """
-    print >> logfile
-    print >> logfile, "Calculating base year hours of operation."
-    for (hours, fuel, plant, unit) in conn.execute("""SELECT count(gload), ertac_fuel_unit_type_bin, orispl_code, unitid
-    FROM calc_hourly_base
-    WHERE gload > 0
-    GROUP BY orispl_code, unitid""").fetchall():
-        if hours:
-            conn.execute("""UPDATE calc_updated_uaf
-                    SET operating_hours_by = ?
-                    WHERE orispl_code = ?
-                    AND unitid = ?
-                    AND ertac_fuel_unit_type_bin = ?""", (hours, plant, unit, fuel))
-    
+            
 def calculate_heat_inputs(conn, logfile):
-    """2.03: Calculate percentile-based max heat input.
+    """2.05: Calculate percentile-based max heat input.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -2152,7 +2747,7 @@ def calculate_heat_inputs(conn, logfile):
 
 
 def calculate_optimal_loads(conn, logfile):
-    """2.04: Calculate percentile-based optimal load threshold.
+    """2.06: Calculate percentile-based optimal load threshold.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -2206,7 +2801,7 @@ def calculate_optimal_loads(conn, logfile):
 
 
 def calculate_utilization_fractions(conn, logfile):
-    """2.05: Calculate actual and maximum utilization fractions.
+    """2.07: Calculate actual and maximum utilization fractions.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -2267,7 +2862,7 @@ def calculate_utilization_fractions(conn, logfile):
 
 
 def fill_unit_hierarchy(conn, base_year, future_year, logfile):
-    """1.08: Set the unit allocation order based on utilization.
+    """1.09: Set the unit allocation order based on utilization.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
@@ -2332,8 +2927,8 @@ def fill_unit_hierarchy(conn, base_year, future_year, logfile):
             # Figure out where the new unit ranks start, and move existing units
             # to make room.
             input_result = conn.execute("""SELECT new_unit_hierarchy_placement_percentile
-            FROM ertac_input_variables 
-            WHERE ertac_region = ? 
+            FROM ertac_input_variables
+            WHERE ertac_region = ?
             AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
 
             if input_result is None:
@@ -2458,7 +3053,7 @@ def calc_hourly_proxy(conn, base_year, future_year, logfile):
         AND online_start_date >= ?
         AND online_start_date < ?
         AND offline_start_date > ?
-        ORDER BY orispl_code, unitid""", (region, fuel, day_after_base, 
+        ORDER BY orispl_code, unitid""", (region, fuel, day_after_base,
         day_after_future, first_future)).fetchall():
 
             ertac_lib.compute_proxy_generation(conn, region, fuel, plant, unit, state, name, base_year, future_year, logfile)
@@ -2477,17 +3072,22 @@ def write_calculated_data(conn, out_prefix, logfile):
     # Intermediate-stage data is exported, instead of simply being passed within
     # the database to the next phase, so that users can review and manually
     # modify the data if necessary.
+    # For V2, have expanded version of UAF, input variables, and generation parms,
+    # and new table for demand transfers.
     ertac_lib.export_table_to_csv('calc_hourly_base', out_prefix, 'calc_hourly_base.csv', conn, ertac_tables.calc_hourly_columns, logfile)
-    ertac_lib.export_table_to_csv('calc_updated_uaf', out_prefix, 'calc_updated_uaf.csv', conn, ertac_tables.uaf_columns, logfile)
+    ertac_lib.export_table_to_csv('calc_updated_uaf', out_prefix, 'calc_updated_uaf_v2.csv', conn, ertac_tables.calc_uaf_columns, logfile)
     ertac_lib.export_table_to_csv('calc_unit_hierarchy', out_prefix, 'calc_unit_hierarchy.csv', conn, ertac_tables.unit_hierarchy_columns, logfile)
     # Use actual column names for temporal hierarchy tables, since their ordering columns are named differently.
     ertac_lib.export_table_to_csv('calc_1hour_hierarchy', out_prefix, 'calc_1hour_hierarchy.csv', conn, None, logfile)
     ertac_lib.export_table_to_csv('calc_6hour_hierarchy', out_prefix, 'calc_6hour_hierarchy.csv', conn, None, logfile)
     ertac_lib.export_table_to_csv('calc_24hour_hierarchy', out_prefix, 'calc_24hour_hierarchy.csv', conn, None, logfile)
     ertac_lib.export_table_to_csv('calc_generation_proxy', out_prefix, 'calc_generation_proxy.csv', conn, ertac_tables.generation_proxy_columns, logfile)
-    ertac_lib.export_table_to_csv('calc_generation_parms', out_prefix, 'calc_generation_parms.csv', conn, ertac_tables.generation_parms_columns, logfile)
+    ertac_lib.export_table_to_csv('calc_generation_parms', out_prefix, 'calc_generation_parms_v2.csv', conn, ertac_tables.generation_parms_columns, logfile)
     ertac_lib.export_table_to_csv('calc_growth_rates', out_prefix, 'calc_growth_rates.csv', conn, ertac_tables.growth_rate_columns, logfile)
-    ertac_lib.export_table_to_csv('calc_input_variables', out_prefix, 'calc_input_variables.csv', conn, ertac_tables.input_variable_columns, logfile)
+    ertac_lib.export_table_to_csv('calc_input_variables', out_prefix, 'calc_input_variables_v2.csv', conn, ertac_tables.input_variable_columns, logfile)
+    ertac_lib.export_table_to_csv('calc_demand_transfers', out_prefix, 'calc_demand_transfers.csv', conn, ertac_tables.demand_transfer_columns, logfile)
+    # 9/21/2015 Export transfer summary as well as detailed demand transfers.
+    ertac_lib.export_table_to_csv('calc_demand_transfer_summary', out_prefix, 'calc_demand_transfer_summary.csv', conn, ertac_tables.demand_transfer_summary_columns, logfile)
     ertac_lib.export_table_to_csv('calc_control_emissions', out_prefix, 'calc_control_emissions.csv', conn, ertac_tables.control_emission_columns, logfile)
     ertac_lib.export_table_to_csv('calc_state_total_listing', out_prefix, 'calc_state_total_listing.csv', conn, ertac_tables.state_total_columns, logfile)
     ertac_lib.export_table_to_csv('calc_group_total_listing', out_prefix, 'calc_group_total_listing.csv', conn, ertac_tables.group_total_columns, logfile)

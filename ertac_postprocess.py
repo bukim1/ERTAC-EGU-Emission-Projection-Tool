@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.02"
+VERSION = "2.1"
 
 import sys
 try:
@@ -29,7 +29,7 @@ except ImportError:
         raise
 
 try:
-    import ertac_lib
+    import ertac_lib as ertac_lib
     from   ertac_tables import * # importaing all dictionaries, tables, etc
     from   ertac_reports import *
 except ImportError:
@@ -57,8 +57,8 @@ except ImportError:
 
 # Post-processor specific table structure definition
 hourly_activity_summary_columns = (('ertac region', 'str', True, None),
-                       ('BY ertac fuel unit type bin', 'str', True, fuel_set),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
+                       ('BY ertac fuel unit type bin', 'str', True, fuel_set),
                        ('oris', 'str', True, None),
                        ('unit id', 'str', True, None),
                        ('state', 'str', True, state_set),
@@ -120,8 +120,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
                        ('Generation Capacity (MW)', 'float', False, None),
                        ('Nameplate Capacity (MW)', 'float', False, None),
-                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
                        ('Number of FY Hours Operating', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -220,9 +220,9 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
     ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_growth_rates.csv', 'calc_growth_rates', conn, growth_rate_columns, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_generation_parms.csv', 'calc_generation_parms', conn, generation_parms_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_generation_parms_v2.csv', 'calc_generation_parms', conn, generation_parms_columns, logfile)
     
-    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, input_variable_columns, logfile):
+    if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables_v2.csv', 'calc_input_variables', conn, input_variable_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_input_variables"
         sys.exit(1) 
     if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_unit_hierarchy.csv', 'calc_unit_hierarchy', conn, unit_hierarchy_columns, logfile):
@@ -230,36 +230,31 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
         sys.exit(1)
     ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
     
-    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, uaf_columns, logfile):
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf_v2.csv', 'calc_updated_uaf', conn, calc_uaf_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"
         sys.exit(1)  
     if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
         sys.exit(1)
-    (where, inputs) = build_where(conn, 'cuuaf.', inputvars, True, True)
-   
-    query= """SELECT chb.orispl_code, chb.unitid FROM calc_hourly_base chb
-    LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
-    ON cuuaf.orispl_code = chb.orispl_code
-    AND cuuaf.unitid = chb.unitid
-    AND cuuaf.ertac_region = chb.ertac_region
-    AND cuuaf.ertac_fuel_unit_type_bin = chb.ertac_fuel_unit_type_bin
-    WHERE cuuaf.orispl_code IS NULL"""
-    #for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
-    #    conn.execute("""DELETE FROM calc_hourly_base WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
+        
       
-    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile):
+    if not ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file_v2.csv', 'hourly_diagnostic_file', conn, hourly_diagnostic_file, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file hourly_diagnostic_file"
         sys.exit(1)
-    query= """SELECT hdf.orispl_code, hdf.unitid FROM hourly_diagnostic_file hdf
-    LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
-    ON hdf.orispl_code = cuuaf.orispl_code
-    AND hdf.unitid = cuuaf.unitid
-    AND hdf.ertac_region = cuuaf.ertac_region
-    AND hdf.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
-    WHERE cuuaf.orispl_code IS NULL"""
-    for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
-        conn.execute("""DELETE FROM hourly_diagnostic_file WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
+ 
+    (where, inputs) = build_where(conn, 'cuuaf.', inputvars, True, True)
+    if where:   
+        logging.info("Removing lines from hourly diagnostic file and calc hourly base not need d for processing")
+        query= """SELECT hdf.orispl_code, hdf.unitid FROM (SELECT * FROM hourly_diagnostic_file where hierarchy_hour = 1) as hdf
+        LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
+        ON hdf.orispl_code = cuuaf.orispl_code
+        AND hdf.unitid = cuuaf.unitid
+        AND hdf.ertac_region = cuuaf.ertac_region
+        AND hdf.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
+        WHERE cuuaf.orispl_code IS NULL"""
+        for (orispl_code, unitid) in conn.execute(query, inputs).fetchall():
+            conn.execute("""DELETE FROM hourly_diagnostic_file WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
+            conn.execute("""DELETE FROM calc_hourly_base WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid])
         
 
 
@@ -422,11 +417,76 @@ def summarize_hourly_results(conn, inputvars, logfile):
             AND cuuaf.ertac_fuel_unit_type_bin = ?
             AND (cuuaf.online_start_date <= ? 
             OR cuuaf.online_start_date IS NULL) 
-            AND cuuaf.offline_start_date <= ?"""
+            AND cuuaf.offline_start_date < ?"""
     
         (where, inputs) = build_where(conn, 'hdf.', inputvars, True, True)
         conn.execute(query + where, [state, fuel_unit_type_bin, str(inputvars['base_year']) + '-01-01', str(inputvars['future_year']) + '-01-01'] + inputs)
+
+        #Switchers
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+        SELECT hdf.ertac_region,
+               hdf.ertac_fuel_unit_type_bin,
+               cuuaf.ertac_fuel_unit_type_bin,
+               hdf.orispl_code,
+               hdf.unitid,
+               hdf.state,
+               hdf.calendar_hour,
+               hdf.hierarchy_hour,
+               NULL,
+               hourly_hi_limit,
+               0,
+               hdf.gload,
+               0,
+               hdf.heat_input,
+               0,
+               hdf.so2_mass/2000,
+               0,
+               hdf.nox_mass/2000,
+               cgp.hour_specific_growth_rate,
+               cgp.afygr,
+               'SWITCH',
+               cuuaf.facility_name
+        FROM hourly_diagnostic_file hdf
+        JOIN calendar_hours ch
+        ON hdf.calendar_hour = ch.calendar_hour
     
+        JOIN calc_updated_uaf cuuaf
+        ON hdf.orispl_code = cuuaf.orispl_code
+        AND hdf.unitid = cuuaf.unitid
+        AND hdf.ertac_region = cuuaf.ertac_region
+        AND hdf.ertac_fuel_unit_type_bin != cuuaf.ertac_fuel_unit_type_bin
+    
+        JOIN calc_generation_parms cgp
+        ON cgp.op_date = ch.op_date
+        AND cgp.op_hour = ch.op_hour
+        AND cgp.ertac_region = cuuaf.ertac_region
+        AND cgp.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
+    
+        JOIN calendar_hierarchy_hours chh
+        ON ch.calendar_hour = chh.calendar_hour
+        AND cuuaf.ertac_region = chh.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = chh.ertac_fuel_unit_type_bin
+         
+        JOIN calc_hourly_base chb
+        ON chb.op_date = ch.op_date
+        AND chb.op_hour = ch.op_hour
+        AND cuuaf.orispl_code = chb.orispl_code
+        AND cuuaf.unitid = chb.unitid
+        AND cuuaf.ertac_region = chb.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = chb.ertac_fuel_unit_type_bin
+    
+        WHERE (upper(cuuaf.camd_by_hourly_data_type) = 'FULL' 
+            OR upper(cuuaf.camd_by_hourly_data_type) = 'PARTIAL') 
+            AND cuuaf.state = ? 
+            AND cuuaf.ertac_fuel_unit_type_bin = ?
+            AND (cuuaf.online_start_date <= ? 
+            OR cuuaf.online_start_date IS NULL) 
+            AND cuuaf.offline_start_date >= ? 
+            AND cuuaf.offline_start_date <= ?"""
+    
+        (where, inputs) = build_where(conn, 'hdf.', inputvars, True, True)
+        conn.execute(query + where, [state, fuel_unit_type_bin, str(inputvars['base_year']) + '-01-01', str(inputvars['future_year']) + '-01-01', str(inputvars['future_year']) + '-12-31'] + inputs)
+            
         #
         #New Units
         query = """SELECT cuuaf.ertac_region,
@@ -1004,12 +1064,13 @@ def main(argv=None):
 
     # Identify versions of Python and SQLite library, and record in log file.
     logging.info("Program started at " + time.asctime())
-    logging.info("ERTAC EGU version: " + VERSION)
+    logging.info("ERTAC Postprocessor version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
     
     print >> logfile, "Program started at " + time.asctime()
+    print >> logfile, "ERTAC Post Processor version: " + VERSION
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version

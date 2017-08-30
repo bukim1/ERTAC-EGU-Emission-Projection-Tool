@@ -2,6 +2,10 @@
 
 -- Create all input tables for ERTAC EGU preprocessor.
 
+-- Updated to version 2.0b as of 8/21/2015, for use with new 2.* model.
+-- Previous table definitions are preserved, with _v1 suffixes, in order to help
+-- with conversion of input files from V1 to V2 formats.
+
 -- This file should be in the code directory with the Python files, not in the
 -- data directory.
 
@@ -75,8 +79,11 @@ PRIMARY KEY (orispl_code, unitid, op_date, op_hour));
 -- attempt to identify unique units by including camd_by_hourly_data_type failed
 -- when UAF data had a repeated "FULL" unit with different fuels in different
 -- starting years, both before 2010.
-DROP TABLE IF EXISTS ertac_initial_uaf;
-CREATE TABLE ertac_initial_uaf
+
+-- Need to retain previous V1 structure to match initial Python definitions for
+-- input conversion, but will use V2 structure for actual model runs.
+DROP TABLE IF EXISTS ertac_initial_uaf_v1;
+CREATE TABLE ertac_initial_uaf_v1
 (orispl_code TEXT NOT NULL COLLATE NOCASE,
 unitid TEXT NOT NULL COLLATE NOCASE,
 form860_plant_id TEXT,
@@ -136,6 +143,69 @@ modifier_email_address TEXT,
 unit_completeness_check TEXT,
 PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));
 
+-- From 8/10/2015 call, added new hours_cap column for V2.
+DROP TABLE IF EXISTS ertac_initial_uaf;
+CREATE TABLE ertac_initial_uaf
+(orispl_code TEXT NOT NULL COLLATE NOCASE,
+unitid TEXT NOT NULL COLLATE NOCASE,
+form860_plant_id TEXT,
+fips_code TEXT,
+county_code TEXT,
+county_name TEXT,
+state TEXT NOT NULL COLLATE NOCASE,
+needs_unit_id TEXT,
+form860_unit_id TEXT,
+plant_latitude REAL,
+plant_longitude REAL,
+inventory_stack_id TEXT,
+facility_name TEXT NOT NULL COLLATE NOCASE,
+needs_ipm_region TEXT,
+nerc_main_region TEXT,
+eia_region_old_nerc TEXT,
+ertac_region TEXT NOT NULL COLLATE NOCASE,
+other_consuming_regions TEXT,
+camd_by_hourly_data_type TEXT NOT NULL COLLATE NOCASE,
+annual_hi_partials REAL,
+camd_by_operating_status TEXT,
+camd_stack_info TEXT,
+online_start_date TEXT,
+offline_start_date TEXT,
+primary_fuel_type TEXT,
+main_fuel_characteristics TEXT,
+secondary_or_substitute_fuel TEXT,
+prime_mover_generator_unit_type TEXT,
+camd_unit_type TEXT,
+ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+max_ertac_hi_hourly_summer REAL,
+max_ertac_hi_hourly_winter REAL,
+hourly_base_max_actual_hi REAL,
+nameplate_capacity REAL,
+max_summer_capacity REAL,
+max_winter_capacity REAL,
+max_unit_heat_input REAL,
+calculated_by_uf REAL,
+max_annual_state_uf REAL,
+max_annual_ertac_uf REAL,
+operating_hours_by REAL,
+max_by_hourly_gload REAL,
+max_by_hourly_sload REAL,
+nominal_heat_rate REAL,
+calc_by_average_heat_rate REAL,
+ertac_heat_rate REAL,
+unit_annual_capacity_limit REAL,
+unit_max_optimal_load_threshold REAL,
+unit_min_optimal_load_threshold REAL,
+unit_ownership_code TEXT,
+multiple_ownership_notation TEXT,
+secondary_owner TEXT,
+tertiary_owner TEXT,
+new_unit_flag TEXT COLLATE NOCASE,
+capacity_limited_unit_flag TEXT COLLATE NOCASE,
+modifier_email_address TEXT,
+unit_completeness_check TEXT,
+hours_cap REAL,
+PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));
+
 -- ERTAC_GROWTH_RATES, p.36
 -- 1/6/2012 update added base year to structure.
 DROP TABLE IF EXISTS ertac_growth_rates;
@@ -157,6 +227,45 @@ PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
 
 -- ERTAC_INPUT_VARIABLES, p.38
 -- 10/6/2011 updates added base year to structure.
+
+-- Need to retain previous V1 structure to match initial Python definitions for
+-- input conversion, but will use V2 structure for actual model runs.
+DROP TABLE IF EXISTS ertac_input_variables_v1;
+CREATE TABLE ertac_input_variables_v1
+(ertac_region TEXT NOT NULL COLLATE NOCASE,
+ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+base_year TEXT NOT NULL,
+future_year TEXT NOT NULL,
+ozone_start_date TEXT,
+ozone_end_date TEXT,
+hourly_hierarchy_code TEXT NOT NULL COLLATE NOCASE,
+new_unit_max_size INTEGER NOT NULL,
+new_unit_min_size INTEGER NOT NULL,
+demand_cushion REAL NOT NULL,
+facility_1 TEXT COLLATE NOCASE,
+facility_2 TEXT COLLATE NOCASE,
+facility_3 TEXT COLLATE NOCASE,
+facility_4 TEXT COLLATE NOCASE,
+facility_5 TEXT COLLATE NOCASE,
+facility_6 TEXT COLLATE NOCASE,
+facility_7 TEXT COLLATE NOCASE,
+facility_8 TEXT COLLATE NOCASE,
+facility_9 TEXT COLLATE NOCASE,
+facility_10 TEXT COLLATE NOCASE,
+maximum_annual_ertac_uf REAL NOT NULL,
+capacity_demand_deficit_review INTEGER NOT NULL,
+unit_optimal_load_threshold_determinant REAL NOT NULL,
+proxy_percentage REAL NOT NULL,
+generic_so2_control_efficiency REAL NOT NULL,
+generic_scr_nox_rate REAL NOT NULL,
+generic_sncr_nox_rate REAL NOT NULL,
+new_unit_hierarchy_placement_percentile REAL NOT NULL,
+new_unit_emission_factor_percentile REAL NOT NULL,
+unit_min_optimal_load_threshold_determinant REAL NOT NULL,
+heat_input_calculation_percentile REAL NOT NULL,
+PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
+
+-- Updated V2 definition based on 8/20/2015 file from Mark.
 DROP TABLE IF EXISTS ertac_input_variables;
 CREATE TABLE ertac_input_variables
 (ertac_region TEXT NOT NULL COLLATE NOCASE,
@@ -166,6 +275,23 @@ future_year TEXT NOT NULL,
 ozone_start_date TEXT,
 ozone_end_date TEXT,
 hourly_hierarchy_code TEXT NOT NULL COLLATE NOCASE,
+heat_rate_avg_method TEXT,
+heat_rate_min REAL,
+heat_rate_max REAL,
+heat_rate_stdev REAL,
+nox_avg_method TEXT,
+nox_min_ef REAL,
+nox_max_ef REAL,
+nox_stdev REAL,
+so2_avg_method TEXT,
+so2_min_ef REAL,
+so2_max_ef REAL,
+so2_stdev REAL,
+co2_avg_method TEXT,
+co2_min_ef REAL,
+co2_max_ef REAL,
+co2_stdev REAL,
+default_co2_rate REAL,
 new_unit_max_size INTEGER NOT NULL,
 new_unit_min_size INTEGER NOT NULL,
 demand_cushion REAL NOT NULL,
@@ -267,3 +393,21 @@ year_applicable TEXT NOT NULL,
 comments TEXT,
 contact_info TEXT,
 PRIMARY KEY (group_name, cap_time_period, cap_pollutant, year_applicable));
+
+-- ERTAC_DEMAND_TRANSFERS
+-- New optional table for V2, to allow load tranfers between fuel types within a
+-- region, or even transfers between regions (assuming sufficient transmission
+-- capacity).  Definition updated from 8/10/2015 call to refer to "demand" and
+-- re-order columns to better match DEMAND_GENERATION_DEFICIT output.  Secondary
+-- index has destination first so transfers can easily be summarized by origin
+-- or by destination.
+DROP TABLE IF EXISTS ertac_demand_transfers;
+CREATE TABLE ertac_demand_transfers
+(origin_region TEXT NOT NULL COLLATE NOCASE,
+origin_fuel TEXT NOT NULL COLLATE NOCASE,
+calendar_hour INTEGER NOT NULL,
+demand_transfer REAL NOT NULL,
+destination_region TEXT NOT NULL COLLATE NOCASE,
+destination_fuel TEXT NOT NULL COLLATE NOCASE,
+PRIMARY KEY (origin_region, origin_fuel, calendar_hour, destination_region, destination_fuel),
+UNIQUE (destination_region, destination_fuel, calendar_hour, origin_region, origin_fuel));

@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.02.2"
+VERSION = "2.1"
 
 import sys
 try:
@@ -74,10 +74,13 @@ Usage: %s [OPTION]...
   --sql-database=existing database.     use sql database at location rather than loading inputs
   --input-prefix-pre=prefix.            prefix used in preprocessor
   --input-prefix-proj=prefix.           prefix used in projection
+  --input-prefix-fs=prefix.              prefix used for ertac to smoke inputs
+  --input-prefix-pp=prefix.           prefix used in post processing
   --ignore-pollutants=pollutants.       comma separated list of pollutants to ignore
   --state=states.                       limit resutls to state or comma separate list of states
   --input-type=[ERTAC|CAMD].            either "ERTAC" to process a hourly_diagnostic_file or "CAMD" to process a calc_hourly_base, defaults to ERTAC
   --monthly                             produce 2 output files for each month rather than 2 annual files
+  --runtz                                call on an outside database to get accurate time zones (only needed for ORL file creation, which isn't implemented)
   -o prefix, --output-prefix=prefix.    output prefix for postprocessor results
 """ % progname
 
@@ -101,12 +104,19 @@ fy_emission_rate_columns = (
 ('ORIS_BOILER_ID', 'str', True, None),
 ('STATE', 'str', True, None),
 ('pm25_rate (lbs/mmBtu)', 'float', False, None),
+('pm25_source', 'str', False, None),
 ('pm10_rate (lbs/mmBtu)', 'float', False, None),
+('pm10_source', 'str', False, None),
 ('co_rate (lbs/mmBtu)', 'float', False, None),
+('co_source', 'str', False, None),
 ('voc_rate (lbs/mmBtu)', 'float', False, None),
+('voc_source', 'str', False, None),
 ('nh3_rate (lbs/mmBtu)', 'float', False, None),
+('nh3_source', 'str', False, None),
 ('cl2_rate (lbs/mmBtu)', 'float', False, None),
-('hcl_rate (lbs/mmBtu)', 'float', False, None))
+('cl2_source', 'str', False, None),
+('hcl_rate (lbs/mmBtu)', 'float', False, None),
+('hcl_source', 'str', False, None))
 
 orl_columns = (('FIPS', 'str', True, None),
                        ('PLANTID', 'str', True, None),
@@ -362,15 +372,81 @@ additional_control_emission_columns = (('ORISPL_CODE', 'str', True, None),
                             ('Control Description', 'str', False, None),
                             ('Submitter email', 'str', False, None))
 
+annual_summary_columns = (('oris', 'str', True, None),
+                       ('unit id', 'str', True, None),
+                       ('Facility Name', 'str', False, None),
+                       ('State', 'str', True, ertac_tables.state_set),
+                       ('FIPS Code', 'str', False, None),
+                       ('ertac region', 'str', True, None),
+                       ('ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
+                       ('BY ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
+                       ('max unit heat input (mmBtu)', 'float', False, None),
+                       ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
+                       ('Generation Capacity (MW)', 'float', False, None),
+                       ('Nameplate Capacity (MW)', 'float', False, None),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
+                       ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
+                       ('Base year generation (MW-hrs)', 'float', False, None),
+                       ('Base year heat input (mmbtu)', 'float', False, None),
+                       ('Future year generation (MW-hrs)', 'float', False, None),
+                       ('Future year heat input (mmbtu)', 'float', False, None),
+                       ('BY Annual SO2 (tons)', 'float', False, None),
+                       ('BY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY Annual NOx (tons)', 'float', False, None),
+                       ('BY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY OS NOx (tons)', 'float', False, None),
+                       ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY OS heat input (mmbtu)', 'float', False, None),
+                       ('BY OS generation (MW-hrs)', 'float', False, None),
+                       ('BY NonOS NOx (tons)', 'float', False, None),
+                       ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual SO2 (tons)', 'float', False, None),
+                       ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual NOx (tons)', 'float', False, None),
+                       ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY OS NOx (tons)', 'float', False, None),
+                       ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY OS heat input (mmbtu)', 'float', False, None),
+                       ('FY OS generation (MW-hrs)', 'float', False, None),
+                       ('FY NonOS NOx (tons)', 'float', False, None),
+                       ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('Hierarchy Order', 'int', False, None),
+                       ('Longitude', 'float', False, None),
+                       ('Latitude', 'float', False, None),
+                       ('Generation Deficit Unit?', 'str', False, ['Y','N']),
+                       ('Retirement Date', 'str', False, None),
+                       ('New Unit?', 'str', False, ['Y','N']),
+                       ('data type', 'str', False, None))
+
+annual_summary_with_other_pollutants_columns = annual_summary_columns + (
+                       ('FY Annual PM2.5 (tons)', 'float', False, None),
+                       ('FY Average Annual PM2.5 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual PM10 (tons)', 'float', False, None),
+                       ('FY Average Annual PM10 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual CO (tons)', 'float', False, None),
+                       ('FY Average Annual CO Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual VOC (tons)', 'float', False, None),
+                       ('FY Average Annual VOC Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual NH3 (tons)', 'float', False, None),
+                       ('FY Average Annual NH3 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual CL2 (tons)', 'float', False, None),
+                       ('FY Average Annual CL2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual HCL (tons)', 'float', False, None),
+                       ('FY Average Annual HCL Rate (lbs/mmbtu)', 'float', False, None))
+
 month_names = ['jan', 'feb', 'mar' ,'apr' , 'may' ,'jun' , 'jul' , 'aug' ,'sep' ,  'oct','nov','dec' ]
 
-def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_fs, input_type, logfile):
+def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_fs, input_prefix_pp, input_type, logfile):
     """Load intermediate ERTAC EGU data from preprocessor for projection.
 
     Keyword arguments:
     conn           -- a valid database connection where the data will be stored
     in_prefix_pre  -- optional prefix added to each input file name generated from preprocessor
     in_prefix_post -- optional prefix added to each input file name generated from projection
+    in_prefix_fs -- optional prefix added to each input file name for SMOKE processing inputs
+    in_prefix_pp -- optional prefix added to each input file name generation from postprocessor
     input_type     -- either ERTAC hourly diagnostic file or CAMD 
     logfile        -- file where logging messages will be written
 
@@ -380,21 +456,21 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_fs,
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, ertac_tables.uaf_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf_v2.csv', 'calc_updated_uaf', conn, ertac_tables.calc_uaf_columns, logfile)
     conn.execute("""DELETE FROM calc_updated_uaf WHERE camd_by_hourly_data_type = 'Non-EGU'""")
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
+    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables_v2.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
     ertac_lib.load_csv_into_table(input_prefix_fs , 'ertac_pusp_info_file.csv', 'ertac_pusp_info_file', conn, pusp_info_file_columns, logfile)
     ertac_lib.load_csv_into_table(input_prefix_fs , 'ertac_base_year_rates_and_additional_controls.csv', 'ertac_base_year_rates_and_additional_controls', conn, additional_control_emission_columns, logfile)
     ertac_lib.load_csv_into_table(input_prefix_fs , 'ertac_additional_variables.csv', 'ertac_additional_variables', conn, additional_variables_columns, logfile)
     ertac_lib.load_csv_into_table(input_prefix_fs , 'ertac_rpo_listing.csv', 'ertac_rpo_listing', conn, rpo_columns, logfile)
+    
+    if input_prefix_pp is not None:
+        ertac_lib.load_csv_into_table(input_prefix_pp, 'post_results/annual_unit_summary.csv', 'annual_summary', conn, annual_summary_columns, logfile)
     if input_type == 'ERTAC':
-        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
+        ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file_v2.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
     else:
         ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile)
-        
-
-
-
+    
 
 def export_table_to_csv_with_smoke_header(table_name, prefix, basic_csv_file, connection, column_types, header, logfile, frmt = None):
     """Export table contents to a CSV file.
@@ -562,9 +638,16 @@ def fix_inputs(conn, inputvars, logfile):
     #fix uaf and pusp
     logging.info("  Fixing Missing Information in Inputs")         
     print >> logfile, "  Fixing Missing Information in Inputs"
+    
+    
+    logging.info("      Deleting units that have not yet come online or are retired")         
+    print >> logfile, "      Deleting units that have not yet come online or are retired"
     conn.execute("""DELETE FROM calc_updated_uaf WHERE offline_start_date <= ? """, [str(inputvars['future_year']) + '-01-01'])
     conn.execute("""DELETE FROM calc_updated_uaf WHERE online_start_date > ? """, [str(inputvars['future_year']) + '-12-31'])
 
+
+    logging.info("      Inserting units into PUSP that are missing")         
+    print >> logfile, "      Inserting units into PUSP that are missing"
     conn.execute("""INSERT INTO ertac_pusp_info_file (ertac_region,ertac_fuel_unit_type_bin, state, offline_start_date, orispl_code, unitid, nox_percentage, so2_percentage, pm25_percentage, pm10_percentage, co_percentage, voc_percentage, nh3_percentage, hap_percentage)
                     SELECT calc_updated_uaf.ertac_region, calc_updated_uaf.ertac_fuel_unit_type_bin, calc_updated_uaf.state, calc_updated_uaf.offline_start_date, calc_updated_uaf.orispl_code, calc_updated_uaf.unitid, 100,100,100,100,100,100, 100, 100
                     FROM calc_updated_uaf 
@@ -575,6 +658,9 @@ def fix_inputs(conn, inputvars, logfile):
                     AND ertac_pusp_info_file.ertac_fuel_unit_type_bin = calc_updated_uaf.ertac_fuel_unit_type_bin
                     WHERE ertac_pusp_info_file.orispl_code IS NULL""")
 
+
+    logging.info("      Filling in missing PUSP identifiers")         
+    print >> logfile, "      Filling in missing PUSP identifiers"
     conn.execute("""UPDATE ertac_pusp_info_file 
                     SET plantid =  (SELECT camd_by_hourly_data_type || '_' || calc_updated_uaf.orispl_code
                     FROM calc_updated_uaf
@@ -595,11 +681,18 @@ def fix_inputs(conn, inputvars, logfile):
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_pointid = pointid WHERE agy_pointid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET agy_stackid = rowid WHERE stackid IS NULL""")
     conn.execute("""UPDATE ertac_pusp_info_file SET stackid = rowid WHERE stackid IS NULL""")
+    
+       
+    conn.execute("""UPDATE ertac_pusp_info_file SET agy_segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
+    conn.execute("""UPDATE ertac_pusp_info_file SET segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
+    
+    logging.info("      Replacing blank offline start dates")         
+    print >> logfile, "      Replacing blank offline start dates"
     conn.execute("""UPDATE ertac_pusp_info_file SET offline_start_date = '2100-01-01' WHERE offline_start_date IS NULL""")
     conn.execute("""UPDATE calc_updated_uaf SET offline_start_date = '2100-01-01' WHERE offline_start_date IS NULL""")
     
-    conn.execute("""UPDATE ertac_pusp_info_file SET agy_segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
-    conn.execute("""UPDATE ertac_pusp_info_file SET segment = '1' WHERE pointid is not null and plantid is not null and segment is null""")
+    logging.info("      Filling in missing stack info")         
+    print >> logfile, "      Filling in missing stack info"
     for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel', 'scc']: 
         conn.execute("""UPDATE ertac_pusp_info_file
                     SET """+column+""" = (SELECT new_unit_"""+column+""" 
@@ -610,7 +703,9 @@ def fix_inputs(conn, inputvars, logfile):
         
 
     #ff10 doesn't use time zone so no sense filling in missing ones otherwise
-    if inputvars['output_type'] == 'ORL' or (not inputvars['notz']):
+    if (inputvars['output_type'] == 'ORL') and (not inputvars['notz']):    
+        logging.info("      Filling in missing time zone info")         
+        print >> logfile, "      Filling in missing time zone info"
         for results in conn.execute("""SELECT plant_latitude, plant_longitude, cuuaf.orispl_code, cuuaf.unitid 
                                     FROM calc_updated_uaf cuuaf
                 
@@ -654,14 +749,16 @@ def process_unit_level_ers(conn, inputvars, logfile):
         ertac_fuel_unit_type_bin, 
         orispl_code, 
         unitid, 
-        state, 
-        """+", ".join([ p[1]+'_rate' for p in ppollutants])+""")
+        state,
+        """+", ".join([ p[1]+'_rate' for p in ppollutants])+""",
+        """+", ".join([ p[1]+'_source' for p in ppollutants])+""")
         SELECT  cuuaf.ertac_region, 
                 cuuaf.ertac_fuel_unit_type_bin, 
                 cuuaf.orispl_code, 
                 cuuaf.unitid,
                 cuuaf.state,
-                """+", ".join([ 'eav.'+p[1]+'_rate' for p in ppollutants])+"""
+                """+", ".join([ 'eav.'+p[1]+'_rate' for p in ppollutants])+""", 
+                """+", ".join([ "'D'" for p in ppollutants])+"""
         FROM calc_updated_uaf cuuaf
         
         LEFT JOIN ertac_additional_variables eav
@@ -674,18 +771,22 @@ def process_unit_level_ers(conn, inputvars, logfile):
     for (polcode, column) in [['NOX', 'nox'], ['SO2', 'so2']]+ppollutants:    
         if polcode not in inputvars['pollutants']:
             for (rate, future_rate, future_control, orispl_code, unitid) in conn.execute("""SELECT base_year_rate, emission_rate, control_efficiency, eac.orispl_code, eac.unitid FROM ertac_base_year_rates_and_additional_controls eac INNER JOIN fy_emission_rates fyer ON eac.orispl_code = fyer.orispl_code AND eac.unitid = fyer.unitid WHERE pollutant_code = ? AND eac.factor_start_date <= ? AND eac.factor_end_date >= ?""", [polcode, inputvars['fy_end_date'], inputvars['fy_start_date']]).fetchall():
+                source = 'B'
                 if future_rate is not None:
                     rate = future_rate
+                    source = 'F'
                 else:
                     if future_control is not None:
                         if rate is not None:                            
                             rate = rate * (1.0 - future_control / 100.0)
+                            source = 'CB'
                         else:
+                            source = 'CD'
                             (default_rate,) = conn.execute("""SELECT """+column+"""_rate FROM fy_emission_rates WHERE orispl_code = ? AND unitid = ?""", [orispl_code, unitid]).fetchone() 
                             if default_rate is not None:
                                 rate = default_rate * (1.0 - future_control / 100.0)
                 if rate is not None:        
-                    conn.execute("""UPDATE fy_emission_rates SET """+column+"""_rate = ? WHERE orispl_code = ? AND unitid = ?""", [rate, orispl_code, unitid]) 
+                    conn.execute("""UPDATE fy_emission_rates SET """+column+"""_rate = ?, """+column+"""_source = ? WHERE orispl_code = ? AND unitid = ?""", [rate, source, orispl_code, unitid]) 
 
 
 def process_results(conn, inputvars, logfile):
@@ -745,8 +846,9 @@ def process_results(conn, inputvars, logfile):
         PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid),
         UNIQUE (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, orispl_code, unitid));""")    
             
-        conn.execute("""INSERT INTO temp_fy_emission_rates(ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, state, pm25_rate, pm10_rate, co_rate, voc_rate, nh3_rate, cl2_rate, hcl_rate)
-        SELECT * FROM fy_emission_rates WHERE state = ? AND ertac_fuel_unit_type_bin = ?""", [state, fuel_unit_type_bin])
+        query_cols="""ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, state, pm25_rate, pm10_rate, co_rate, voc_rate, nh3_rate, cl2_rate, hcl_rate"""
+        conn.execute("""INSERT INTO temp_fy_emission_rates("""+query_cols+""")
+        SELECT """+query_cols+""" FROM fy_emission_rates WHERE state = ? AND ertac_fuel_unit_type_bin = ?""", [state, fuel_unit_type_bin])
         
         logging.info("  Calculating Emissions")
         print >> logfile, "  Calculating Emissions"
@@ -903,7 +1005,8 @@ def process_results(conn, inputvars, logfile):
                                         AND orispl_code = ?
                                         AND unitid = ?""", [month_total, polcode, plantid, pointid, stackid, segment, orispl_code, unitid])
                     #orl section
-                    else:                    
+                    else:        
+                        logging.error("ORL function is not yet available")
                         plant_info = [statefips, countyfips, plantid, pointid, stackid, segment, polcode, '', 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,scc]
                         (percentage, ) = conn.execute("""SELECT COALESCE("""+column+"""_percentage, 0) 
                                         FROM ertac_pusp_info_file eauaf
@@ -1205,22 +1308,58 @@ def make_calendar_hours(base_year, future_year, conn):
             
     conn.execute("""UPDATE calendar_hours
     SET future_date = REPLACE(op_date, ?, ?)""", (base_year, future_year))
-    
+
+def create_annual_summary_file(conn, inputvars, logfile):
+
+
+    conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_nox_mass, fy_nox_rate, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type,
+        """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+""") 
+        SELECT annual_summary.*,
+        """+", ".join([ 'fyer.'+p[1]+'_rate' for p in ppollutants])+"""  
+        FROM annual_summary
+        LEFT JOIN fy_emission_rates fyer
+        ON fyer.orispl_code = annual_summary.orispl_code
+        AND fyer.unitid = annual_summary.unitid 
+        AND fyer.ertac_fuel_unit_type_bin = annual_summary.ertac_fuel_unit_type_bin""")
+        
+    if inputvars['output_type'] == 'FF10':
+        for p in ppollutants:
+            if p[0] not in inputvars['pollutants']:
+                 for (orispl_code, unitid, ertac_fuel_unit_type_bin) in conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM annual_summary_with_other_pollutants""").fetchall(): 
+                     conn.execute("""UPDATE annual_summary_with_other_pollutants SET 
+                        fy_"""+p[1]+"""_mass = (SELECT ae FROM (SELECT SUM(ff10_future.ann_emis) as ae, ff10_future.cas, ff10_future.orispl_code, ff10_future.unitid, ff10_future.facil_category_code FROM ff10_future GROUP BY ff10_future.cas, ff10_future.orispl_code, ff10_future.unitid, ff10_future.facil_category_code) AS ff10 
+                        WHERE ff10.orispl_code = ?
+                        AND ff10.unitid = ?
+                        AND ff10.facil_category_code = ?
+                        AND ff10.cas = ?)
+                        WHERE annual_summary_with_other_pollutants.orispl_code = ?
+                        AND annual_summary_with_other_pollutants.unitid = ?
+                        AND annual_summary_with_other_pollutants.ertac_fuel_unit_type_bin = ?""", (orispl_code, unitid, ertac_fuel_unit_type_bin,p[0],orispl_code, unitid, ertac_fuel_unit_type_bin))    
+    else:
+        logging.error("ORL function is not yet available")
+    conn.commit()
+     
 def write_final_data(conn, inputvars, out_prefix, produce_dianostics, produce_annual, produce_hourly, logfile):
     """Write out projected ERTAC EGU data reports.
 
     Keyword arguments:
     conn       -- a valid database connection where the data is stored
     out_prefix -- optional prefix added to each output file name
+    produce_dianostics -- flag to indicate if diagnostics files should be created
+    produce_annual  -- flag to indicate if an annual SMOKE ready file should be created
+    produce_hourly-- flag to indicate if an hourly SMOKE ready file should be created
     logfile    -- file where logging messages will be written
 
     """
     # Final output data is exported as CSV files for reporting and use with
     # other programs.
+ 
     if produce_dianostics:
-        ertac_lib.export_table_to_csv('fy_emission_rates', out_prefix, 'fy_emission_rate_columns.csv', conn, fy_emission_rate_columns, logfile)
+        ertac_lib.export_table_to_csv('fy_emission_rates', out_prefix, 'fy_emission_rates.csv', conn, fy_emission_rate_columns, logfile)
         ertac_lib.export_table_to_csv('ertac_pusp_info_file', out_prefix, 'proc_pusp_info_file.csv', conn, pusp_info_file_columns, logfile)
-    else:
+        if inputvars['input_prefix_pp'] is not None:
+            ertac_lib.export_table_to_csv('annual_summary_with_other_pollutants', inputvars['input_prefix_pp'], 'post_results/annual_summary_with_other_pollutants.csv', conn, annual_summary_with_other_pollutants_columns, logfile)    
+    else:     
         if inputvars['output_type'] == 'ORL':
             header = ["#ORL      POINT", 
                       "#TYPE     Point Sources", 
@@ -1274,8 +1413,8 @@ def main(argv=None):
     try:
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
-            "input-prefix-pre=", "input-prefix-proj=", "input-prefix-fs=", "output-prefix=", "orl-files=", 
-            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly", "notz"])
+            "input-prefix-pre=", "input-prefix-proj=", "input-prefix-fs=", "input-prefix-pp=", "output-prefix=", "orl-files=", 
+            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly", "runtz"])
         
     except getopt.GetoptError, err:
         print
@@ -1296,7 +1435,8 @@ def main(argv=None):
     inputvars['input_type'] = 'ERTAC'
     inputvars['output_type'] = 'FF10'
     inputvars['run_qa'] = False
-    inputvars['notz'] = False
+    inputvars['notz'] = True
+    inputvars['input_prefix_pp'] = None
     argument_list = ''
     
     for opt, arg in opts:
@@ -1321,10 +1461,12 @@ def main(argv=None):
             input_prefix_proj = arg
         elif opt in ("--input-prefix-fs"):
             input_prefix_fs = arg
+        elif opt in ("--input-prefix-pp"):
+            inputvars['input_prefix_pp'] = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
-        elif opt in ("--notz"):
-            inputvars['notz'] = True
+        elif opt in ("--runtz"):
+            inputvars['notz'] = False
         elif opt in ("--monthly"):
             inputvars['monthly'] = True
         elif opt in ("--output-type"):
@@ -1391,12 +1533,13 @@ def main(argv=None):
 
     # Identify versions of Python and SQLite library, and record in log file.
     logging.info("Program started at " + time.asctime())
-    logging.info("ERTAC EGU version: " + VERSION)
+    logging.info("ERTAC SMOKE Processor version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
     logging.info("Using sqlite3 module version: " + sqlite3.version)
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
 
     print >> logfile, "Program started at " + time.asctime()
+    print >> logfile, "ERTAC SMOKE Processor version: " + VERSION
     print >> logfile, "Running under python version: " + sys.version
     print >> logfile, "Using sqlite3 module version: " + sqlite3.version
     print >> logfile, "Linked against sqlite3 database library version: " + sqlite3.sqlite_version
@@ -1417,7 +1560,7 @@ def main(argv=None):
     # intermediate files were manually changed with erroneous data.
     logging.info("Loading intermediate data:")
     print >> logfile, "Loading intermediate data:"
-    load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj, input_prefix_fs, inputvars['input_type'], logfile)
+    load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj, input_prefix_fs, inputvars['input_prefix_pp'], inputvars['input_type'], logfile)
     logging.info("Finished loading intermediate data.")
     print >> logfile,"Finished loading intermediate data."
 
@@ -1504,11 +1647,15 @@ def main(argv=None):
             if inputvars['monthly']:
                 logging.info("Writing out reports:")
                 write_final_data(dbconn, inputvars, new_new_output_prefix, False, False, True, logfile)
-    
+
+  
         dbconn.execute("""UPDATE ff10_future SET ann_emis = """ + " + ".join([m+"_value" for m in month_names]))    
         logging.info("Writing out reports:")
         write_final_data(dbconn, inputvars, new_output_prefix,False,True,  (not inputvars['monthly']), logfile)
-        
+    
+    if inputvars['input_prefix_pp'] is not None:    
+        logging.info("Creating Annual Summary File")
+        create_annual_summary_file(dbconn, inputvars, logfile)          
     write_final_data(dbconn, inputvars, output_prefix,True,False,False, logfile)
 
     logging.info("Finished writing reports.")

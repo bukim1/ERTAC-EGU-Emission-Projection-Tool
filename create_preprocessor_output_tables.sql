@@ -3,6 +3,15 @@
 -- Create all output tables for ERTAC EGU pre-processor to pass data on to
 -- later post-processing stages.
 
+-- Updated to version 2.0c as of 9/22/2015, for use with new 2.* model.
+-- Previous table definitions have been expanded from V1 to V2 for:
+-- calc_input_variables
+-- calc_updated_uaf
+-- calc_generation_parms
+-- New tables have been added for:
+-- calc_demand_transfers
+-- calc_demand_transfer_summary
+
 -- CALC_HOURLY_BASE, p.42, same format as CAMD_HOURLY_BASE and
 -- ERTAC_HOURLY_NONCAMD in input, with fuel bin added to accomodate units with
 -- fuel switches.  Since we had to add the fuel bin, also added ertac_region to
@@ -37,6 +46,8 @@ heat_input REAL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, op_date, op_hour, orispl_code, unitid));
 
 -- CALC_UPDATED_UAF, p.43, same format as ERTAC_INITIAL_UAF in input.
+-- From 8/10/2015 call, added new hours_cap column for V2.
+-- From 9/2/2015 call, appended more columns for computed limits and averages.
 DROP TABLE IF EXISTS calc_updated_uaf;
 CREATE TABLE calc_updated_uaf
 (orispl_code TEXT NOT NULL COLLATE NOCASE,
@@ -96,6 +107,35 @@ new_unit_flag TEXT COLLATE NOCASE,
 capacity_limited_unit_flag TEXT COLLATE NOCASE,
 modifier_email_address TEXT,
 unit_completeness_check TEXT,
+hours_cap REAL,
+heat_rate_lower_limit REAL,
+heat_rate_upper_limit REAL,
+heat_rate_lower_stat REAL,
+heat_rate_upper_stat REAL,
+heat_rate_avg REAL,
+heat_rate_os_avg REAL,
+heat_rate_nonos_avg REAL,
+nox_ef_lower_limit REAL,
+nox_ef_upper_limit REAL,
+nox_ef_lower_stat REAL,
+nox_ef_upper_stat REAL,
+nox_ef_avg REAL,
+nox_ef_os_avg REAL,
+nox_ef_nonos_avg REAL,
+so2_ef_lower_limit REAL,
+so2_ef_upper_limit REAL,
+so2_ef_lower_stat REAL,
+so2_ef_upper_stat REAL,
+so2_ef_avg REAL,
+so2_ef_os_avg REAL,
+so2_ef_nonos_avg REAL,
+co2_ef_lower_limit REAL,
+co2_ef_upper_limit REAL,
+co2_ef_lower_stat REAL,
+co2_ef_upper_stat REAL,
+co2_ef_avg REAL,
+co2_ef_os_avg REAL,
+co2_ef_nonos_avg REAL,
 PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));
 
 -- CALC_UNIT_HIERARCHY, p.48
@@ -163,12 +203,14 @@ gload_proxy REAL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, op_date, op_hour, orispl_code, unitid));
 
 -- CALC_GENERATION_PARMS, p.53
+-- From 9/2/2015 call, add net_demand_transfer column; also need to add calendar_hour.
 DROP TABLE IF EXISTS calc_generation_parms;
 CREATE TABLE calc_generation_parms
 (ertac_region TEXT NOT NULL COLLATE NOCASE,
 ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
 op_date TEXT NOT NULL,
 op_hour INTEGER NOT NULL,
+calendar_hour INTEGER,
 temporal_allocation_order INTEGER NOT NULL,
 hour_specific_growth_rate REAL,
 base_actual_generation REAL,
@@ -176,10 +218,12 @@ base_retired_generation REAL,
 future_projected_generation REAL,
 future_projected_growth REAL,
 total_proxy_generation REAL,
+net_demand_transfer REAL,
 adjusted_projected_generation REAL,
 afygr REAL,
 excess_generation_pool REAL,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, op_date, op_hour),
+UNIQUE (ertac_region, ertac_fuel_unit_type_bin, calendar_hour),
 UNIQUE (ertac_region, ertac_fuel_unit_type_bin, temporal_allocation_order));
 
 -- CALC_GROWTH_RATES
@@ -205,6 +249,7 @@ PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
 -- CALC_INPUT_VARIABLES
 -- Same format as ERTAC_INPUT_VARIABLES.
 -- 10/6/2011 updates added base year to structure.
+-- Updated V2 definition based on 8/20/2015 file from Mark.
 DROP TABLE IF EXISTS calc_input_variables;
 CREATE TABLE calc_input_variables
 (ertac_region TEXT NOT NULL COLLATE NOCASE,
@@ -214,6 +259,23 @@ future_year TEXT NOT NULL,
 ozone_start_date TEXT,
 ozone_end_date TEXT,
 hourly_hierarchy_code TEXT NOT NULL COLLATE NOCASE,
+heat_rate_avg_method TEXT,
+heat_rate_min REAL,
+heat_rate_max REAL,
+heat_rate_stdev REAL,
+nox_avg_method TEXT,
+nox_min_ef REAL,
+nox_max_ef REAL,
+nox_stdev REAL,
+so2_avg_method TEXT,
+so2_min_ef REAL,
+so2_max_ef REAL,
+so2_stdev REAL,
+co2_avg_method TEXT,
+co2_min_ef REAL,
+co2_max_ef REAL,
+co2_stdev REAL,
+default_co2_rate REAL,
 new_unit_max_size INTEGER NOT NULL,
 new_unit_min_size INTEGER NOT NULL,
 demand_cushion REAL NOT NULL,
@@ -281,3 +343,26 @@ year_applicable TEXT NOT NULL,
 comments TEXT,
 contact_info TEXT,
 PRIMARY KEY (group_name, cap_time_period, cap_pollutant, year_applicable));
+
+-- CALC_DEMAND_TRANSFERS
+-- Same format as ERTAC_DEMAND_TRANSFERS from input.
+DROP TABLE IF EXISTS calc_demand_transfers;
+CREATE TABLE calc_demand_transfers
+(origin_region TEXT NOT NULL COLLATE NOCASE,
+origin_fuel TEXT NOT NULL COLLATE NOCASE,
+calendar_hour INTEGER NOT NULL,
+demand_transfer REAL NOT NULL,
+destination_region TEXT NOT NULL COLLATE NOCASE,
+destination_fuel TEXT NOT NULL COLLATE NOCASE,
+PRIMARY KEY (origin_region, origin_fuel, calendar_hour, destination_region, destination_fuel),
+UNIQUE (destination_region, destination_fuel, calendar_hour, origin_region, origin_fuel));
+
+-- CALC_DEMAND_TRANSFER_SUMMARY
+-- Net change in demand due to transfers in and/or out.
+DROP TABLE IF EXISTS calc_demand_transfer_summary;
+CREATE TABLE calc_demand_transfer_summary
+(transfer_region TEXT NOT NULL COLLATE NOCASE,
+transfer_fuel TEXT NOT NULL COLLATE NOCASE,
+calendar_hour INTEGER NOT NULL,
+net_demand_change REAL NOT NULL,
+PRIMARY KEY (transfer_region, transfer_fuel, calendar_hour));

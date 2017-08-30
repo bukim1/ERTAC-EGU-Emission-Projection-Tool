@@ -2,7 +2,10 @@
 
 """Utility routines for ERTAC EGU projection"""
 
-import sys, csv, logging, os, re
+VERSION = "2.1"
+# Updated to version 2.0b as of 9/22/2015.
+
+import sys, csv, logging, os, re, datetime
 
 # This section was changed, as in the main programs, to try loading built-in or
 # add-on SQLite3 module, for older versions of Python.
@@ -31,7 +34,6 @@ def run_script_file(file_name, connection):
     path_to_file = os.path.join(sys.path[0], file_name)
     sql_file = open(path_to_file, 'r')
     sql_text = sql_file.read()
-
     connection.executescript(sql_text)
     connection.commit()
 
@@ -89,10 +91,9 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
 
     """
 
-    if prefix is not None:
-        csv_file = prefix + basic_csv_file
-    else:
-        csv_file = basic_csv_file
+    if prefix is None:
+        prefix = ""
+    csv_file = prefix + basic_csv_file
 
     # Need to know number of columns in table to create parameter list for
     # INSERT ... VALUES() clause.
@@ -127,7 +128,8 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
         cf = open(csv_file, 'rU')
     except IOError:
         print >> logfile, "File: " + csv_file + " -- Could not be read."
-        return
+        #jmj allows checks to see if loading fails or not 150413
+        return False
     print >> logfile, "Loading input data from file: " + csv_file
     cr = csv.reader(cf)
     row_count = 0
@@ -218,7 +220,8 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
 
     print >> logfile, "File: " + csv_file + "; read", cr.line_num, "lines, stored", row_count, "data rows in table: " + table_name
     connection.commit()
-
+    #jmj allows checks to see if loading fails or not 150413
+    return True
 
 
 # 20120406 Added month abbreviations and ozone season validation and conversion
@@ -349,12 +352,17 @@ def make_calendar_hours(base_year, future_year, connection):
     connection -- a valid database connection
 
     """
-
+    # Updated for V2 to add columns for grouping by day, month, quarter, and
+    # Ozone/non-Ozone season.
     connection.executescript("""CREATE TEMPORARY TABLE calendar_hours
     (op_date TEXT NOT NULL,
     op_hour INTEGER NOT NULL,
     future_date TEXT,
     calendar_hour INTEGER,
+    m_d TEXT,
+    mon TEXT,
+    qtr TEXT,
+    o_n TEXT,
     PRIMARY KEY (op_date, op_hour));
 
     INSERT INTO calendar_hours (op_date, op_hour)
@@ -365,6 +373,36 @@ def make_calendar_hours(base_year, future_year, connection):
     connection.execute("""UPDATE calendar_hours
     SET future_date = REPLACE(op_date, ?, ?)""", (base_year, future_year))
 
+    # Current model requires that all regions and fuels have same Ozone season
+    # dates, so emissions can be summarized up to OS and non-OS totals.  So, we
+    # only have to figure out Ozone season dates once.  Fill in grouping columns
+    # for day (mm-dd), month, quarter, and OS/non-OS.
+    (base_year, ozone_start_date, ozone_end_date) = connection.execute("""SELECT
+    base_year, ozone_start_date, ozone_end_date
+    FROM calc_input_variables""").fetchone()
+    os_start = convert_ozone_date(ozone_start_date, base_year)
+    os_end = convert_ozone_date(ozone_end_date, base_year)
+
+    connection.executescript("""UPDATE calendar_hours
+    SET m_d = SUBSTR(op_date, 6, 5),
+        mon = SUBSTR(op_date, 6, 2),
+        o_n = 'N';
+
+    UPDATE calendar_hours
+    SET qtr = CASE WHEN mon IN ('12', '01', '02')
+        THEN 'W'
+        WHEN mon IN ('03', '04', '05')
+        THEN 'X'
+        WHEN mon IN ('06', '07', '08')
+        THEN 'Y'
+        WHEN mon IN ('09', '10', '11')
+        THEN 'Z'
+        END;""")
+
+    connection.execute("""UPDATE calendar_hours
+    SET o_n = 'O'
+    WHERE op_date BETWEEN ? and ?""", (os_start, os_end))
+
     calendar_hour = 1
     for (rowid,) in connection.execute("""SELECT rowid
     FROM calendar_hours
@@ -373,14 +411,14 @@ def make_calendar_hours(base_year, future_year, connection):
         SET calendar_hour = ?
         WHERE rowid = ?""", (calendar_hour, rowid))
         calendar_hour += 1
-        
+
     connection.executescript("""CREATE UNIQUE INDEX calendar_hour
     ON calendar_hours (calendar_hour);
 
     CREATE UNIQUE INDEX calendar_future
     ON calendar_hours (future_date, op_hour);""")
 
-	
+
 
 def check_data_ranges(table_name, connection, column_types, logfile):
     """Check data for valid ranges.
@@ -437,8 +475,8 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
 
     # Look up proxy percentage
     input_result = connection.execute("""SELECT proxy_percentage
-    FROM calc_input_variables 
-    WHERE ertac_region = ? 
+    FROM calc_input_variables
+    WHERE ertac_region = ?
     AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
     if input_result is None:
         print >> logfile, "  Warning: no proxy percentage in input variables for region/fuel " \
@@ -451,7 +489,7 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
     (unit_max_hi, unit_max_uf, unit_heat_rate, unit_online, unit_offline) = connection.execute("""SELECT max_ertac_hi_hourly_summer,
     max_annual_ertac_uf, ertac_heat_rate, online_start_date, offline_start_date
     FROM calc_updated_uaf
-    WHERE orispl_code = ? 
+    WHERE orispl_code = ?
     AND unitid = ?
     AND ertac_fuel_unit_type_bin = ?""", (plant, unit, fuel)).fetchone()
 
@@ -618,10 +656,9 @@ def export_table_to_csv(table_name, prefix, basic_csv_file, connection, column_t
 
     """
 
-    if prefix is not None:
-        csv_file = prefix + basic_csv_file
-    else:
-        csv_file = basic_csv_file
+    if prefix is None:
+        prefix = ""
+    csv_file = prefix + basic_csv_file
 
     dbcur = connection.execute("SELECT * FROM " + table_name)
 
