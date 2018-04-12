@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "1.02"
+VERSION = "2.1"
 
 import sys
 try:
@@ -75,7 +75,7 @@ Usage: %s [OPTION]...
   --sql-database=existing database.     use sql database at location rather than loading inputs
   --input-prefix-pre=prefix.            prefix used in preprocessor
   --input-prefix-proj=prefix.           prefix used in projection
-  --ignore-pollutants=pollutants        comma separated list of pollutants to ignore
+  --input-prefix-pp=prefix.             prefix used in post processing
   --state=state                         limit resutls to state or comma separate list of states
   -o prefix, --output-prefix=prefix.    output prefix for postprocessor results
 """ % progname
@@ -83,7 +83,7 @@ avert_unit_inputs_columns = (
                ('ORISPL_Code', 'str', True, None),
                ('Unit ID', 'str', True, None),
                ('ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
-               ('eGRID Region', 'str', False, None))
+               ('eGRID Region', 'str', False, None)) #EGRID 2010 is preferable, but 
 
 avert_unit_information_columns = (
                ('key', 'str', False, None),
@@ -116,17 +116,14 @@ avert_unit_information_columns = (
                ('Final AVERT Region', 'str', False, None),
                ('CapacityGen Match', 'str', False, None),
                ('Maximum Capacity (MW)', 'float', False, None),
-               ('Gross Generation (MWh)', 'float', False, None),
+               ('Gross Generation (MWh)', 'float', True, None), 
+               ('Gross Heat Input (mmbtu)', 'float', True, None), 
+               ('Gross CO2_mass (lb/hr)', 'float', True, None), 
+               ('Gross SO2_mass (lb/hr)', 'float', True, None), 
+               ('Gross NOX_mass (lbs/hr)', 'float', True, None), 
                ('Capacity Factor', 'float', False, None),
                ('ORSPL UNITID', 'str', True, None),
                ('AVERT Region', 'str', False, None))
-
-avert_hourly_columns = (('Gross Load (MW-hr)', None, None, None),
-                          ('Heat Input (mmbtu)', None, None, None),
-                          ('CO2_mass (lb/hr)', None, None, None),
-                          ('SO2_mass (lb/hr)', None, None, None),
-                          ('NOX_mass (lbs/hr)', None, None, None))
-
 
 unit_level_CO2_addon_enhanced = (('ORIS', None, None, None),
                        ('Unit ID', None, None, None),
@@ -162,7 +159,88 @@ unit_level_CO2_addon_enhanced = (('ORIS', None, None, None),
                        ('Latitude', None, None, None),
                        ("Is Unit NSPS Applicable?", None, None, None))
 
-def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, logfile):
+annual_summary_columns = (('oris', 'str', True, None),
+                       ('unit id', 'str', True, None),
+                       ('Facility Name', 'str', False, None),
+                       ('State', 'str', True, ertac_tables.state_set),
+                       ('FIPS Code', 'str', False, None),
+                       ('ertac region', 'str', True, None),
+                       ('ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
+                       ('BY ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
+                       ('max unit heat input (mmBtu)', 'float', False, None),
+                       ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
+                       ('Generation Capacity (MW)', 'float', False, None),
+                       ('Nameplate Capacity (MW)', 'float', False, None),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
+                       ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
+                       ('Base year generation (MW-hrs)', 'float', False, None),
+                       ('Base year heat input (mmbtu)', 'float', False, None),
+                       ('Future year generation (MW-hrs)', 'float', False, None),
+                       ('Future year heat input (mmbtu)', 'float', False, None),
+                       ('BY Annual SO2 (tons)', 'float', False, None),
+                       ('BY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY Annual NOx (tons)', 'float', False, None),
+                       ('BY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY OS NOx (tons)', 'float', False, None),
+                       ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('BY OS heat input (mmbtu)', 'float', False, None),
+                       ('BY OS generation (MW-hrs)', 'float', False, None),
+                       ('BY NonOS NOx (tons)', 'float', False, None),
+                       ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual SO2 (tons)', 'float', False, None),
+                       ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Annual NOx (tons)', 'float', False, None),
+                       ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY OS NOx (tons)', 'float', False, None),
+                       ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY OS heat input (mmbtu)', 'float', False, None),
+                       ('FY OS generation (MW-hrs)', 'float', False, None),
+                       ('FY NonOS NOx (tons)', 'float', False, None),
+                       ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('Hierarchy Order', 'int', False, None),
+                       ('Longitude', 'float', False, None),
+                       ('Latitude', 'float', False, None),
+                       ('Generation Deficit Unit?', 'str', False, ['Y','N']),
+                       ('Retirement Date', 'str', False, None),
+                       ('New Unit?', 'str', False, ['Y','N']),
+                       ('data type', 'str', False, None))
+
+
+def export_array_to_csv(array_data, prefix, basic_csv_file, connection, column_types, logfile):
+    """Export table contents to a CSV file.
+
+    Keyword arguments:
+    table_name -- name of table to export
+    prefix -- optional prefix added to each output file name
+    basic_csv_file -- basic name of CSV file to be written, without prefix
+    connection -- a valid database connection
+    column_types -- a group of tuples describing each column, with column headers
+    logfile -- file where logging messages will be written
+
+    """
+    if prefix is None:
+        prefix = ""
+    csv_file = prefix + basic_csv_file
+
+    logging.info("  " + csv_file)
+    print >> logfile
+    try:
+        cf = open(csv_file, 'wb')
+    except IOError:
+        print >> logfile, "File: " + csv_file + " -- Could not be written."
+        return
+
+    cw = csv.writer(cf)
+    row_count = 0
+    for row in array_data:
+        cw.writerow(row)
+        row_count += 1
+
+    print >> logfile, "Wrote out", row_count, "data rows from array to file: " + csv_file
+    
+def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_pp, input_prefix_avert, logfile):
     """Load intermediate ERTAC EGU data from preprocessor for projection.
 
     Keyword arguments:
@@ -178,13 +256,13 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, logfile):
     # This section will reject any input rows that are missing required fields,
     # have unreadable data, or violate key constraints, because it is impossible
     # to store that data in the database tables.
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf.csv', 'calc_updated_uaf', conn, ertac_tables.uaf_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf_v2.csv', 'calc_updated_uaf', conn, ertac_tables.calc_uaf_columns, logfile)
     conn.execute("""DELETE FROM calc_updated_uaf WHERE camd_by_hourly_data_type = 'Non-EGU'""")
-    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'unit_level_activity.csv', 'unit_level_activity', conn, ertac_reports.unit_level_activity, logfile)
-    ertac_lib.load_csv_into_table('', 'avert_unit_inputs.csv', 'avert_unit_inputs', conn, avert_unit_inputs_columns, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_input_variables_v2.csv', 'calc_input_variables', conn, ertac_tables.input_variable_columns, logfile)            
+    ertac_lib.load_csv_into_table(input_prefix_pp, 'annual_unit_summary.csv', 'annual_summary', conn, annual_summary_columns, logfile)
+    ertac_lib.load_csv_into_table(input_prefix_avert, 'avert_unit_inputs.csv', 'avert_unit_inputs', conn, avert_unit_inputs_columns, logfile)
     ertac_lib.load_csv_into_table(in_prefix_proj, 'unit_level_CO2_addon_enhanced.csv', 'unit_level_CO2_addon_enhanced', conn, unit_level_CO2_addon_enhanced, logfile)
-    ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
+    ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file_v2.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
     
     
 def fix_inputs(conn, inputvars, logfile):
@@ -204,7 +282,7 @@ def fix_inputs(conn, inputvars, logfile):
     conn.execute("""DELETE FROM calc_updated_uaf WHERE online_start_date > ? """, [str(inputvars['future_year']) + '-12-31'])
 
 
-def process_results(conn, inputvars, logfile):
+def process_results(conn, inputvars, out_prefix, logfile):
     """Summarize hourly data and merge base year and future year results.
 
     Keyword arguments:
@@ -232,6 +310,10 @@ def process_results(conn, inputvars, logfile):
                         fuel_definition,
                         max_capacity,
                         fy_gen,
+                        fy_hi,
+                        fy_co2_mass,
+                        fy_so2_mass,
+                        fy_nox_mass,
                         uf,
                         orispl_unitid,
                         egrid_region,
@@ -244,21 +326,31 @@ cuuaf.unitid,
 plant_latitude,
 plant_longitude,
 cuuaf.ertac_fuel_unit_type_bin,
-primary_fuel_type,
-secondary_or_substitute_fuel,
+cuuaf.primary_fuel_type,
+cuuaf.secondary_or_substitute_fuel,
 case when cuuaf.ertac_fuel_unit_type_bin == 'Oil' OR cuuaf.ertac_fuel_unit_type_bin == 'Coal' then cuuaf.ertac_fuel_unit_type_bin else 'Gas' end,
-max_unit_heat_input * 1000/ertac_heat_rate,
-fy_gen,
-uf,
+cuuaf.max_unit_heat_input * 1000/cuuaf.ertac_heat_rate,
+ula.fy_gload,
+ula.fy_heat_input,
+fy_co2,
+ula.fy_so2_mass,
+ula.fy_nox_mass,
+cuuaf.max_annual_ertac_uf,
 cuuaf.orispl_code || ' ' || cuuaf.unitid,
 aui.egrid_region,
 ?
 
 FROM calc_updated_uaf cuuaf
-LEFT JOIN unit_level_activity ula
+LEFT JOIN annual_summary ula
 ON cuuaf.orispl_code = ula.orispl_code
 AND cuuaf.unitid = ula.unitid
 AND cuuaf.ertac_fuel_unit_type_bin = ula.ertac_fuel_unit_type_bin 
+
+LEFT JOIN unit_level_CO2_addon_enhanced ulcae
+ON cuuaf.orispl_code = ulcae.orispl_code
+AND cuuaf.unitid = ulcae.unitid
+AND cuuaf.ertac_fuel_unit_type_bin = ulcae.ertac_fuel_unit_type_bin 
+
 LEFT JOIN avert_unit_inputs aui
 ON cuuaf.orispl_code = aui.orispl_code
 AND cuuaf.unitid = aui.unitid
@@ -275,29 +367,98 @@ ertac_fuel_unit_type_bin) AS hdf
 ON hdf.orispl_code = cuuaf.orispl_code
 AND hdf.unitid = cuuaf.unitid
 AND hdf.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
-ORDER BY cuuaf.orispl_code, cuuaf.unitid, cuuaf.ertac_fuel_unit_type_bin""", (inputvars['future_year'], ))
+WHERE cuuaf.offline_start_date >= ?
+ORDER BY cuuaf.orispl_code, cuuaf.unitid, cuuaf.ertac_fuel_unit_type_bin""", (inputvars['future_year'], inputvars['future_year']+'-01-01'))
 
-    conn.execute("""INSERT INTO avert_hourly(gload, heat_input, co2_mass, so2_mass, nox_mass)
-                        SELECT COALESCE(gload,0), COALESCE(heat_input,0), COALESCE(fy_co2_rate*heat_input, 0), COALESCE(so2_mass,0), COALESCE(nox_mass,0)  
+
+
+                
+    file_counts=0
+    writers = [False,False,False,False,False]
+    for file in ["avert_hourly_gload.csv", 
+    "avert_hourly_heat_input.csv", 
+    "avert_hourly_co2.csv", 
+    "avert_hourly_so2.csv", 
+    "avert_hourly_nox.csv"]:
+    
+        if out_prefix is None:
+            out_prefix = ""
+        csv_file = out_prefix + file
+    
+        logging.info("  " + csv_file)
+        print >> logfile
+        try:
+            writers[file_counts] = csv.writer(open(csv_file, 'wb'))
+        except IOError:
+            print >> logfile, "File: " + csv_file + " -- Could not be written."
+            return
+        file_counts+=1
+    
+    
+    avert_hourly_columns = ()         
+    (unit_rows,) = conn.execute("""SELECT COUNT(*) from avert_unit_information""").fetchone()
+    
+    if unit_rows == 0:    
+        logging.info("No units found in files.  Exiting.")
+        print >> logfile, "No units found in files.  Exiting."
+        return False;
+    
+    for (hour,) in conn.execute("""SELECT calendar_hour from calendar_hours;"""):   
+        gload_hour_data = [None]*(unit_rows)
+        heat_input_hour_data = [None]*(unit_rows)
+        co2_hour_data = [None]*(unit_rows)
+        so2_hour_data = [None]*(unit_rows)
+        nox_hour_data = [None]*(unit_rows)
+        
+        logging.info("Processing hour: "+str(hour)+" - "+time.asctime())
+            
+        unit_count = 1  
+        
+        conn.execute("""DELETE FROM temp_hour_data;""")
+        conn.execute("""INSERT INTO temp_hour_data (gload, heat_input, co2_mass, so2_mass, nox_mass, orispl_code, unitid, ertac_fuel_unit_type_bin) 
+                        SELECT COALESCE(gload,0), 
+                        COALESCE(heat_input,0), 
+                        COALESCE(fy_co2_rate*heat_input,0), 
+                        COALESCE(so2_mass,0), 
+                        COALESCE(nox_mass,0),
+                        hdf.orispl_code,
+                        hdf.unitid,
+                        hdf.ertac_fuel_unit_type_bin
                         FROM hourly_diagnostic_file as hdf
                         LEFT JOIN unit_level_CO2_addon_enhanced ulcae
                         ON hdf.orispl_code = ulcae.orispl_code
                         AND hdf.unitid = ulcae.unitid
                         AND hdf.ertac_fuel_unit_type_bin = ulcae.ertac_fuel_unit_type_bin
-                        INNER JOIN calc_updated_uaf cuuaf
-                        ON hdf.orispl_code = cuuaf.orispl_code
-                        AND hdf.unitid = cuuaf.unitid
-                        AND hdf.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
-                        ORDER BY hdf.orispl_code, hdf.unitid, hdf.ertac_fuel_unit_type_bin, calendar_hour ASC""")
-
-    (hourly_rows,) = conn.execute("""SELECT COUNT(*) from avert_hourly""").fetchone()
-    (unit_rows,) = conn.execute("""SELECT COUNT(*) from avert_unit_information""").fetchone()
-    message = "avert hourly has "+str(hourly_rows)+" rows, avert unit information has "+str(unit_rows)+" rows and there are "+str(hourly_rows -(unit_rows*8760))+" extra rows in the hourly file"
-    logging.info(message)
-    print >> logfile, message
-    
+                        WHERE calendar_hour = ?
+                        ORDER BY hdf.orispl_code, hdf.unitid, hdf.ertac_fuel_unit_type_bin""",[hour])
+        
+        for unit in conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM avert_unit_information""").fetchall():
+            #avert_hourly_columns = avert_hourly_columns + (("Unit "+str(unit_count), None, None, None),)
+  
+            for data in conn.execute("""SELECT gload, heat_input, co2_mass, so2_mass, nox_mass
+                        FROM temp_hour_data
+                        WHERE orispl_code = ?
+                        AND unitid = ?
+                        AND ertac_fuel_unit_type_bin = ?
+                        ORDER BY orispl_code, unitid, ertac_fuel_unit_type_bin""",unit).fetchall():
+            
+                gload_hour_data[unit_count-1]=data[0]
+                heat_input_hour_data[unit_count-1]=data[1]
+                co2_hour_data[unit_count-1]=data[2]
+                so2_hour_data[unit_count-1]=data[3]
+                nox_hour_data[unit_count-1]=data[4]
+            unit_count+=1
+         
+        writers[0].writerow(gload_hour_data)
+        writers[1].writerow(heat_input_hour_data)
+        writers[2].writerow(co2_hour_data)
+        writers[3].writerow(so2_hour_data)
+        writers[4].writerow(nox_hour_data)
+     
         # Save changes
     conn.commit()
+    
+    ertac_lib.export_table_to_csv('avert_unit_information', out_prefix, 'avert_unit_information.csv', conn, avert_unit_information_columns, logfile)
 
 def make_calendar_hours(base_year, future_year, conn):
     """Make lookup table between dates/hours and hour numbers.
@@ -328,19 +489,7 @@ def make_calendar_hours(base_year, future_year, conn):
     conn.execute("""UPDATE calendar_hours
     SET future_date = REPLACE(op_date, ?, ?)""", (base_year, future_year))
     
-def write_final_data(conn, out_prefix, logfile):
-    """Write out projected ERTAC EGU data reports.
-
-    Keyword arguments:
-    conn       -- a valid database connection where the data is stored
-    out_prefix -- optional prefix added to each output file name
-    logfile    -- file where logging messages will be written
-
-    """
-     
-    ertac_lib.export_table_to_csv('avert_unit_information', out_prefix, 'avert_unit_information.csv', conn, avert_unit_information_columns, logfile)
-    ertac_lib.export_table_to_csv('avert_hourly', out_prefix, 'avert_hourly.csv', conn, avert_hourly_columns, logfile)
- 
+       
 def create_for_avert_tables(conn):
     # Also need state lookup table, for abbreviation-FIPS code conversion.
     conn.executescript("""
@@ -350,21 +499,8 @@ def create_for_avert_tables(conn):
     state_abbreviation TEXT NOT NULL COLLATE NOCASE,
     state_name TEXT NOT NULL COLLATE NOCASE,
     PRIMARY KEY (state_code),
-    UNIQUE (state_abbreviation));""")
-    
-    conn.executescript("""
-DROP TABLE IF EXISTS unit_level_activity;
-CREATE TABLE unit_level_activity(orispl_code TEXT NOT NULL COLLATE NOCASE,unitid TEXT NOT NULL COLLATE NOCASE,facility_name TEXT NOT NULL COLLATE NOCASE,state TEXT NOT NULL COLLATE NOCASE,ertac_region TEXT NOT NULL COLLATE NOCASE,ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,max_ertac_hi_hourly_summer REAL,heat_rate REAL,capacity REAL,num_hrs_fy_max INTEGER,uf REAL,by_gen REAL,by_hi REAL,by_hours REAL,fy_gen REAL,fy_hi REAL,fy_hours REAL, PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));""")
-                         
-    conn.executescript("""DROP TABLE IF EXISTS hourly_diagnostic_file;
-CREATE TABLE hourly_diagnostic_file(ertac_region TEXT NOT NULL COLLATE NOCASE,ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,state TEXT NOT NULL COLLATE NOCASE,orispl_code TEXT NOT NULL COLLATE NOCASE,unitid TEXT NOT NULL COLLATE NOCASE,calendar_hour INTEGER NOT NULL,hierarchy_hour INTEGER NOT NULL,hourly_hi_limit TEXT NOT NULL COLLATE NOCASE,annual_hi_limit TEXT NOT NULL COLLATE NOCASE,cumulative_hi REAL,cumulative_gen REAL,gload REAL,heat_input REAL,so2_mass REAL,so2_rate REAL,nox_rate REAL,nox_mass REAL,PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, hierarchy_hour, orispl_code, unitid),UNIQUE (ertac_region, calendar_hour, ertac_fuel_unit_type_bin, orispl_code, unitid));""")
-     
-    conn.executescript("""DROP TABLE IF EXISTS calc_updated_uaf;
-CREATE TABLE calc_updated_uaf(orispl_code TEXT NOT NULL COLLATE NOCASE,unitid TEXT NOT NULL COLLATE NOCASE,form860_plant_id TEXT,fips_code TEXT,county_code TEXT,county_name TEXT,state TEXT NOT NULL COLLATE NOCASE,needs_unit_id TEXT,form860_unit_id TEXT,plant_latitude REAL,plant_longitude REAL,inventory_stack_id TEXT,facility_name TEXT NOT NULL COLLATE NOCASE,needs_ipm_region TEXT,nerc_main_region TEXT,eia_region_old_nerc TEXT,ertac_region TEXT NOT NULL COLLATE NOCASE,other_consuming_regions TEXT,camd_by_hourly_data_type TEXT NOT NULL COLLATE NOCASE,annual_hi_partials REAL,camd_by_operating_status TEXT,camd_stack_info TEXT,online_start_date TEXT,offline_start_date TEXT,primary_fuel_type TEXT,main_fuel_characteristics TEXT,secondary_or_substitute_fuel TEXT,prime_mover_generator_unit_type TEXT,camd_unit_type TEXT,ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,max_ertac_hi_hourly_summer REAL,max_ertac_hi_hourly_winter REAL,hourly_base_max_actual_hi REAL,nameplate_capacity REAL,max_summer_capacity REAL,max_winter_capacity REAL,max_unit_heat_input REAL,calculated_by_uf REAL,max_annual_state_uf REAL,max_annual_ertac_uf REAL,operating_hours_by REAL,max_by_hourly_gload REAL,max_by_hourly_sload REAL,nominal_heat_rate REAL,calc_by_average_heat_rate REAL,ertac_heat_rate REAL,unit_annual_capacity_limit REAL,unit_max_optimal_load_threshold REAL,unit_min_optimal_load_threshold REAL,unit_ownership_code TEXT,multiple_ownership_notation TEXT,secondary_owner TEXT,tertiary_owner TEXT,new_unit_flag TEXT COLLATE NOCASE,capacity_limited_unit_flag TEXT COLLATE NOCASE,modifier_email_address TEXT,unit_completeness_check TEXT,PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));""")
-               
-    conn.executescript("""DROP TABLE IF EXISTS calc_input_variables;
-CREATE TABLE calc_input_variables(ertac_region TEXT NOT NULL COLLATE NOCASE,ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,base_year TEXT NOT NULL,future_year TEXT NOT NULL,ozone_start_date TEXT,ozone_end_date TEXT,hourly_hierarchy_code TEXT NOT NULL COLLATE NOCASE,new_unit_max_size INTEGER NOT NULL,new_unit_min_size INTEGER NOT NULL,demand_cushion REAL NOT NULL,facility_1 TEXT COLLATE NOCASE,facility_2 TEXT COLLATE NOCASE,facility_3 TEXT COLLATE NOCASE,facility_4 TEXT COLLATE NOCASE,facility_5 TEXT COLLATE NOCASE,facility_6 TEXT COLLATE NOCASE,facility_7 TEXT COLLATE NOCASE,facility_8 TEXT COLLATE NOCASE,facility_9 TEXT COLLATE NOCASE,facility_10 TEXT COLLATE NOCASE,maximum_annual_ertac_uf REAL NOT NULL,capacity_demand_deficit_review INTEGER NOT NULL,unit_optimal_load_threshold_determinant REAL NOT NULL,proxy_percentage REAL NOT NULL,generic_so2_control_efficiency REAL NOT NULL,generic_scr_nox_rate REAL NOT NULL,generic_sncr_nox_rate REAL NOT NULL,new_unit_hierarchy_placement_percentile REAL NOT NULL,new_unit_emission_factor_percentile REAL NOT NULL,unit_min_optimal_load_threshold_determinant REAL NOT NULL,heat_input_calculation_percentile REAL NOT NULL,PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));""")
-     
+    UNIQUE (state_abbreviation));""")  
+  
     conn.executescript("""
     DROP TABLE IF EXISTS avert_unit_inputs;
 CREATE TABLE avert_unit_inputs
@@ -407,19 +543,27 @@ final_avert_region TEXT,
 capacity_gen_match TEXT,
 max_capacity REAL,
 fy_gen REAL,
+fy_hi REAL,
+fy_co2_mass REAL,
+fy_so2_mass REAL,
+fy_nox_mass REAL,
 uf REAL,
 orispl_unitid TEXT,
 avert_region2 TEXT,
 PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));""")
 
     conn.executescript("""
-DROP TABLE IF EXISTS avert_hourly;
-CREATE TABLE avert_hourly
-(gload REAL,
-heat_input REAL,
-co2_mass REAL,
-so2_mass REAL,
-nox_mass REAL);""")
+DROP TABLE IF EXISTS temp_hour_data;
+CREATE TABLE temp_hour_data (
+gload REAL, 
+heat_input REAL, 
+co2_mass REAL, 
+so2_mass REAL, 
+nox_mass REAL, 
+orispl_code TEXT NOT NULL COLLATE NOCASE,
+unitid TEXT NOT NULL COLLATE NOCASE,
+ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));""")
 
     conn.executescript("""
 DROP TABLE IF EXISTS unit_level_CO2_addon_enhanced;
@@ -467,7 +611,7 @@ def main(argv=None):
     try:
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
-            "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "sql-database="])
+            "input-prefix-pre=", "input-prefix-proj=", "input-prefix-pp=", "input-prefix-avert=", "output-prefix=", "sql-database="])
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -478,6 +622,8 @@ def main(argv=None):
     debug_level       = "INFO"
     input_prefix_pre  = None
     input_prefix_proj = None
+    input_prefix_pp = None
+    input_prefix_avert = None
     output_prefix     = ''
     inputvars         = {}
     sql_database      = ''
@@ -498,6 +644,10 @@ def main(argv=None):
             input_prefix_pre = arg
         elif opt in ("--input-prefix-proj"):
             input_prefix_proj = arg
+        elif opt in ("--input-prefix-pp"):
+            input_prefix_pp = arg
+        elif opt in ("--input-prefix-avert"):
+            input_prefix_avert = arg
         elif opt in ("-o", "--output-prefix"):
             output_prefix = arg
         elif opt in ("--sql-database"):
@@ -554,13 +704,16 @@ def main(argv=None):
         # The preprocessor output tables are used as the projection inputs.
         # The projection output tables produce all the reports.
         dbconn = sqlite3.connect(sql_database)
+        ertac_lib.run_script_file('create_preprocessor_output_tables.sql', dbconn)
+        ertac_lib.run_script_file('create_projection_output_tables.sql', dbconn)
+        ertac_lib.run_script_file('create_postprocessing_tables.sql', dbconn)
         create_for_avert_tables(dbconn)
         # Load intermediate CSV data into tables, rejecting any rows that can't be
         # used.  There should be no invalid data at this stage, unless the
         # intermediate files were manually changed with erroneous data.
         logging.info("Loading intermediate data:")
         print >> logfile, "Loading intermediate data:"
-        load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj,logfile)
+        load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj,input_prefix_pp,input_prefix_avert, logfile)
         logging.info("Finished loading intermediate data.")
         print >> logfile,"Finished loading intermediate data."
         existing_db_file = False
@@ -583,7 +736,7 @@ def main(argv=None):
             # intermediate files were manually changed with erroneous data.
             logging.info("Loading intermediate data:")
             print >> logfile, "Loading intermediate data:"
-            load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj, logfile)
+            load_intermediate_data(dbconn, input_prefix_pre, input_prefix_proj, input_prefix_avert, logfile)
             logging.info("Finished loading intermediate data.")
             print >> logfile,"Finished loading intermediate data."
             existing_db_file = False
@@ -610,11 +763,8 @@ def main(argv=None):
 
     fix_inputs(dbconn, inputvars, logfile)
    
-    process_results(dbconn, inputvars, logfile)
-      
-    logging.info("Writing out reports:")         
-    write_final_data(dbconn, output_prefix, logfile)
-        
+    process_results(dbconn, inputvars, output_prefix, logfile)
+    
     logging.info("Finished writing reports.")
     dbconn.close()
     logging.info("Program ended at " + time.asctime())

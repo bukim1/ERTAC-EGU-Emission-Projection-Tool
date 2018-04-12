@@ -395,7 +395,7 @@ def main(argv=None):
     # Feb. 29 data before ranking days/hours for hierarchy.
     if ertac_lib.is_leap_year(base_year) and not ertac_lib.is_leap_year(future_year):
         logging.info("Deleting February 29 base year hourly data.")
-        delete_feb29_data(dbconn, base_year, logfile)
+        delete_feb29_data(dbconn, base_year, future_year, logfile)
 
     # Fill in missing GLOAD in calc_hourly_base for units that report SLOAD
     # instead.
@@ -1792,7 +1792,7 @@ def fill_gload_from_sload(conn, logfile):
 
 
 
-def delete_feb29_data(conn, base_year, logfile):
+def delete_feb29_data(conn, base_year, future_year, logfile):
     """Delete February 29 base year hourly data that won't be used for non-leap future year.
 
     Keyword arguments:
@@ -1805,6 +1805,11 @@ def delete_feb29_data(conn, base_year, logfile):
     print >> logfile, "Deleting base year hourly data from February 29:"
     rows_affected = conn.execute("DELETE FROM calc_hourly_base WHERE op_date = ?", (base_year + "-02-29",)).rowcount
     print >> logfile, "Deleted", rows_affected, "hourly rows."
+    
+    #jmj 1/31/2018 calendar hours was not used after the feb 29 deleltion code before, but after demand transfers were implemented
+    #it was so the table needs to be recreated to properly deal with the removal of feb29
+    conn.executescript("""DROP TABLE calendar_hours""")
+    ertac_lib.make_calendar_hours(base_year, future_year, conn)
 
 
 

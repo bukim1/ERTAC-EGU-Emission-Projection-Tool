@@ -321,6 +321,30 @@ facility_name TEXT COLLATE NOCASE,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, calendar_hour),
 UNIQUE (ertac_region, calendar_hour, ertac_fuel_unit_type_bin, orispl_code, unitid));
 
+
+DROP TABLE IF EXISTS daily_unit_activity_summary;
+CREATE TABLE daily_unit_activity_summary
+(ertac_region TEXT NOT NULL COLLATE NOCASE,
+ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+by_ertac_fuel_unit_type_bin TEXT NOT NULL COLLATE NOCASE,
+orispl_code TEXT NOT NULL COLLATE NOCASE,
+unitid TEXT NOT NULL COLLATE NOCASE,
+state TEXT NOT NULL COLLATE NOCASE,
+calendar_day TEXT NOT NULL,
+by_gload REAL,
+fy_gload REAL,
+by_heat_input REAL,
+fy_heat_input REAL,
+by_so2_mass REAL,
+fy_so2_mass REAL,
+by_nox_mass REAL,
+fy_nox_mass REAL,
+data_type TEXT COLLATE NOCASE,
+facility_name TEXT COLLATE NOCASE,
+PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid, calendar_day),
+UNIQUE (ertac_region, calendar_day, ertac_fuel_unit_type_bin, orispl_code, unitid));
+
+
 DROP TABLE IF EXISTS hourly_regional_activity_summary;
 CREATE TABLE hourly_regional_activity_summary
 (ertac_region TEXT NOT NULL COLLATE NOCASE,

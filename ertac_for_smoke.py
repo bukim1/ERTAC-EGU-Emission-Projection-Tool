@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1"
+VERSION = "2.1.1"
 
 import sys
 try:
@@ -74,13 +74,13 @@ Usage: %s [OPTION]...
   --sql-database=existing database.     use sql database at location rather than loading inputs
   --input-prefix-pre=prefix.            prefix used in preprocessor
   --input-prefix-proj=prefix.           prefix used in projection
-  --input-prefix-fs=prefix.              prefix used for ertac to smoke inputs
-  --input-prefix-pp=prefix.           prefix used in post processing
+  --input-prefix-fs=prefix.             prefix used for ertac to smoke inputs
+  --input-prefix-pp=prefix.             prefix used in post processing
   --ignore-pollutants=pollutants.       comma separated list of pollutants to ignore
   --state=states.                       limit resutls to state or comma separate list of states
   --input-type=[ERTAC|CAMD].            either "ERTAC" to process a hourly_diagnostic_file or "CAMD" to process a calc_hourly_base, defaults to ERTAC
   --monthly                             produce 2 output files for each month rather than 2 annual files
-  --runtz                                call on an outside database to get accurate time zones (only needed for ORL file creation, which isn't implemented)
+  --runtz                               call on an outside database to get accurate time zones (only needed for ORL file creation, which isn't implemented)
   -o prefix, --output-prefix=prefix.    output prefix for postprocessor results
 """ % progname
 
@@ -465,7 +465,7 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_fs,
     ertac_lib.load_csv_into_table(input_prefix_fs , 'ertac_rpo_listing.csv', 'ertac_rpo_listing', conn, rpo_columns, logfile)
     
     if input_prefix_pp is not None:
-        ertac_lib.load_csv_into_table(input_prefix_pp, 'post_results/annual_unit_summary.csv', 'annual_summary', conn, annual_summary_columns, logfile)
+        ertac_lib.load_csv_into_table(input_prefix_pp, 'annual_unit_summary.csv', 'annual_summary', conn, annual_summary_columns, logfile)
     if input_type == 'ERTAC':
         ertac_lib.load_csv_into_table(in_prefix_proj, 'hourly_diagnostic_file_v2.csv', 'hourly_diagnostic_file', conn, ertac_reports.hourly_diagnostic_file, logfile)
     else:
@@ -799,7 +799,8 @@ def process_results(conn, inputvars, logfile):
 
     """
     
-    conn.execute("""DELETE FROM ff10_hourly_future""")
+    if inputvars['monthly']:
+        conn.execute("""DELETE FROM ff10_hourly_future""")
     conn.execute("""DELETE FROM fy_emission_rates""") 
     
     process_unit_level_ers(conn, inputvars, logfile)
@@ -974,8 +975,8 @@ def process_results(conn, inputvars, logfile):
                         me = inputvars['future_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
 
                         if ff10_count == 0:
-                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, """+month_names[inputvars['month']-1]+"""_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, facil_category_code, comment)
-                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, cuuaf.ertac_fuel_unit_type_bin,  eauaf.comments
+                            conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, """+month_names[inputvars['month']-1]+"""_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, design_capacity, design_capacity_units, facil_category_code, comment)
+                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, 1000 * max_ertac_hi_hourly_summer / ertac_heat_rate,'MW', cuuaf.ertac_fuel_unit_type_bin,  eauaf.comments
                                         FROM calc_updated_uaf cuuaf
                                         LEFT JOIN ertac_pusp_info_file eauaf
                                         
@@ -1358,7 +1359,7 @@ def write_final_data(conn, inputvars, out_prefix, produce_dianostics, produce_an
         ertac_lib.export_table_to_csv('fy_emission_rates', out_prefix, 'fy_emission_rates.csv', conn, fy_emission_rate_columns, logfile)
         ertac_lib.export_table_to_csv('ertac_pusp_info_file', out_prefix, 'proc_pusp_info_file.csv', conn, pusp_info_file_columns, logfile)
         if inputvars['input_prefix_pp'] is not None:
-            ertac_lib.export_table_to_csv('annual_summary_with_other_pollutants', inputvars['input_prefix_pp'], 'post_results/annual_summary_with_other_pollutants.csv', conn, annual_summary_with_other_pollutants_columns, logfile)    
+            ertac_lib.export_table_to_csv('annual_summary_with_other_pollutants', inputvars['input_prefix_pp'], 'annual_summary_with_other_pollutants.csv', conn, annual_summary_with_other_pollutants_columns, logfile)    
     else:     
         if inputvars['output_type'] == 'ORL':
             header = ["#ORL      POINT", 
@@ -1619,6 +1620,9 @@ def main(argv=None):
                 m = '0'+str(inputvars['month'])
             else: 
                 m = str(inputvars['month'])
+                
+            
+            
             inputvars['start_date'] = inputvars['base_year']+"-"+m+"-01"
             inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
             inputvars['fy_start_date'] = inputvars['future_year']+"-"+m+"-01"
@@ -1634,10 +1638,10 @@ def main(argv=None):
                     new_new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_month_"+str(inputvars['month'])+"_")
                     new_output_prefix = re.sub(r'[^a-zA-Z0-9\-.() _\/]+', '', 'forsmokemonthly/'+output_prefix+rpo[0]+"_")
                    
-            logging.info("Summarizing data...")
+            logging.info("Summarizing data for Month: "+m)
             print >> logfile
-            print >> logfile, "Summarizing data..."
-
+            print >> logfile, "Summarizing data for Month: "+m
+            
             process_results(dbconn, inputvars, logfile)
             
             if inputvars['run_qa']:

@@ -9,7 +9,7 @@ from __future__ import division
 import sys
 
 
-VERSION = "2.1"
+VERSION = "2.1.1"
 # Updated to version 2.0k as of 9/30/2015.
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
@@ -303,7 +303,7 @@ def main(argv=None):
     logging.info("Calculating future emissions.")
     print >> logfile
     print >> logfile, "Calculating future emissions."
-    calculate_future_emissions(dbconn, base_year, ozone_start_base, ozone_end_base, ozone_start_future, ozone_end_future, logfile)
+    calculate_future_emissions(dbconn, base_year, future_year, ozone_start_base, ozone_end_base, ozone_start_future, ozone_end_future, logfile)
 
     # Summarize future emissions.
     logging.info("Summarizing future emissions.")
@@ -1044,7 +1044,6 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
         assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, logfile)
         # 5
         assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year, future_year, logfile)
-
         
         # Did any new or existing unit hit a limit at this hour, leaving excess
         # generation?
@@ -2004,19 +2003,25 @@ def summarize_unit_activity(conn, logfile):
 
 
 
-def calculate_future_emissions(conn, base_year, ozone_start_base, ozone_end_base, ozone_start_future, ozone_end_future, logfile):
+def calculate_future_emissions(conn, base_year, future_year, ozone_start_base, ozone_end_base, ozone_start_future, ozone_end_future, logfile):
     """26: Calculate future hourly emissions.
 
     Keyword arguments:
     conn -- a valid database connection where the data is stored
     base_year -- the base year where generation is projected from
+    future_year -- the futuer year where generation is projected to
     ozone_start_base, ozone_end_base -- the ozone season dates in the base year
     ozone_start_future, ozone_end_future -- the ozone season dates in the future year
     logfile -- file where logging messages will be written
 
     """
 
-    day_after_base = ertac_lib.first_day_after(base_year)
+    #1/31/2018 jmj added an option to use controls in the base year if you are doing a by = fy runs 
+    if base_year < future_year:
+        first_day = ertac_lib.first_day_after(base_year)
+    else:
+        first_day = ertac_lib.first_day_of(base_year)
+        
     # Determine average emission rates from base year activity.
     # 20120406 Updated to calculate seasonal NOx rates instead of annual.
     conn.executescript("""CREATE TEMPORARY TABLE by_emission_summary
@@ -2244,7 +2249,7 @@ def calculate_future_emissions(conn, base_year, ozone_start_base, ozone_end_base
                 AND unitid = ?
                 AND pollutant_code = ?
                 AND factor_start_date BETWEEN ? AND ?
-                AND factor_end_date >= ?""", (plant, unit, 'SO2', day_after_base, future_date, future_date)).fetchone()
+                AND factor_end_date >= ?""", (plant, unit, 'SO2', first_day, future_date, future_date)).fetchone()
 
                 nox_result = conn.execute("""SELECT emission_rate, control_efficiency
                 FROM calc_control_emissions
@@ -2252,7 +2257,7 @@ def calculate_future_emissions(conn, base_year, ozone_start_base, ozone_end_base
                 AND unitid = ?
                 AND pollutant_code = ?
                 AND factor_start_date BETWEEN ? AND ?
-                AND factor_end_date >= ?""", (plant, unit, 'NOx', day_after_base, future_date, future_date)).fetchone()
+                AND factor_end_date >= ?""", (plant, unit, 'NOx', first_day, future_date, future_date)).fetchone()
 
                 if so2_result is not None:
                     (future_so2_rate, future_so2_control) = so2_result

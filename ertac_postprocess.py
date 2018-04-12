@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1"
+VERSION = "2.1.1"
 
 import sys
 try:
@@ -79,6 +79,24 @@ hourly_activity_summary_columns = (('ertac region', 'str', True, None),
                        ('data type', 'str', False, None),
                        ('facility name', 'str', False, None))
 
+daily_unit_activity_summary_columns = (('ertac region', 'str', True, None),
+                       ('ertac fuel unit type bin', 'str', True, fuel_set),
+                       ('BY ertac fuel unit type bin', 'str', True, fuel_set),
+                       ('oris', 'str', True, None),
+                       ('unit id', 'str', True, None),
+                       ('state', 'str', True, state_set),
+                       ('calendar day', 'int', True, (0, 365)),
+                       ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
+                       ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
+                       ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('FY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
+                       ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                       ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                       ('data type', 'str', False, None),
+                       ('facility name', 'str', False, None))
+
 hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
                        ('data type', 'str', False, None),
@@ -140,8 +158,10 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY Annual SO2 (tons)', 'float', False, None),
                        ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
                        ('FY Annual NOx (tons)', 'float', False, None),
                        ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly NOx Mass Max (tons)', 'float', False, None),
                        ('FY OS NOx (tons)', 'float', False, None),
                        ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY OS heat input (mmbtu)', 'float', False, None),
@@ -194,6 +214,9 @@ Usage: %s [OPTION]...
   --input-prefix-proj=prefix.           prefix used in projection
   -o prefix, --output-prefix=prefix.    output prefix for postprocessor results
 
+  --include-st-hr                       run the state level hourly summary
+  --include-rg-hr                       run the regional level hourly summary
+  --include-unit-day                    run the unit level daily summary
   --config-file=existing csv.           use csv to override all inputs except sql-database (only accepts double dashed, without the double dashes, e.g. input-prefix-proj)
   --state=state.                        limit analysis to this state
   --region=region.                      limit analysis to this ertac region
@@ -244,7 +267,7 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
  
     (where, inputs) = build_where(conn, 'cuuaf.', inputvars, True, True)
     if where:   
-        logging.info("Removing lines from hourly diagnostic file and calc hourly base not need d for processing")
+        logging.info("Removing lines from hourly diagnostic file and calc hourly base not needed for processing")
         query= """SELECT hdf.orispl_code, hdf.unitid FROM (SELECT * FROM hourly_diagnostic_file where hierarchy_hour = 1) as hdf
         LEFT JOIN (SELECT * FROM calc_updated_uaf cuuaf WHERE 1 """ + where + """) AS cuuaf
         ON hdf.orispl_code = cuuaf.orispl_code
@@ -289,7 +312,64 @@ def summarize_hourly_results(conn, inputvars, logfile):
 
     for (state, fuel_unit_type_bin) in conn.execute(query, inputs).fetchall():
         logging.info("Processing - " + state + ", " + fuel_unit_type_bin)
+ 
+         #Full and Partial Reporters
+        query = """SELECT hdf.ertac_region,
+               hdf.ertac_fuel_unit_type_bin,
+               hdf.ertac_fuel_unit_type_bin,
+               hdf.orispl_code,
+               hdf.unitid,
+               hdf.state,
+               hdf.calendar_hour,
+               hdf.hierarchy_hour,
+               hdf.hierarchy_hour,
+               hourly_hi_limit,
+               chb.gload,
+               hdf.gload,
+               chb.heat_input,
+               hdf.heat_input,
+               chb.so2_mass/2000,
+               hdf.so2_mass/2000,
+               chb.nox_mass/2000,
+               hdf.nox_mass/2000,
+               cgp.hour_specific_growth_rate,
+               cgp.afygr,
+               upper(cuuaf.camd_by_hourly_data_type),
+               cuuaf.facility_name
+        FROM hourly_diagnostic_file hdf
+        JOIN calendar_hours ch
+        ON hdf.calendar_hour = ch.calendar_hour
+    
+        JOIN calc_updated_uaf cuuaf
+        ON hdf.orispl_code = cuuaf.orispl_code
+        AND hdf.unitid = cuuaf.unitid
+        AND hdf.ertac_region = cuuaf.ertac_region
+        AND hdf.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
+    
+        JOIN calc_generation_parms cgp
+        ON cgp.op_date = ch.op_date
+        AND cgp.op_hour = ch.op_hour
+        AND cgp.ertac_region = cuuaf.ertac_region
+        AND cgp.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
         
+        JOIN calc_hourly_base chb
+        ON chb.op_date = ch.op_date
+        AND chb.op_hour = ch.op_hour
+        AND cuuaf.orispl_code = chb.orispl_code
+        AND cuuaf.unitid = chb.unitid
+        AND cuuaf.ertac_region = chb.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = chb.ertac_fuel_unit_type_bin
+    
+        WHERE (upper(cuuaf.camd_by_hourly_data_type) = 'FULL' 
+            OR upper(cuuaf.camd_by_hourly_data_type) = 'PARTIAL')
+            AND cuuaf.state = ? 
+            AND cuuaf.ertac_fuel_unit_type_bin = ?
+            AND (cuuaf.online_start_date <= ? 
+            OR cuuaf.online_start_date IS NULL) 
+            AND cuuaf.offline_start_date > ?"""
+    
+        (where, inputs) = build_where(conn, 'hdf.', inputvars, True, True)
+          
         #Full and Partial Reporters
         query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
@@ -356,7 +436,70 @@ def summarize_hourly_results(conn, inputvars, logfile):
         #(where, inputs) = build_where(conn, 'cgp.', inputvars, True, True)
         #conn.execute(query + where, inputs)
     
+        #
+        #Switchers
+        query = """SELECT hdf.ertac_region,
+               hdf.ertac_fuel_unit_type_bin,
+               cuuaf.ertac_fuel_unit_type_bin,
+               hdf.orispl_code,
+               hdf.unitid,
+               hdf.state,
+               hdf.calendar_hour,
+               hdf.hierarchy_hour,
+               chh.hierarchy_hour,
+               hourly_hi_limit,
+               chb.gload,
+               hdf.gload,
+               chb.heat_input,
+               hdf.heat_input,
+               chb.so2_mass/2000,
+               hdf.so2_mass/2000,
+               chb.nox_mass/2000,
+               hdf.nox_mass/2000,
+               cgp.hour_specific_growth_rate,
+               cgp.afygr,
+               'SWITCH',
+               cuuaf.facility_name
+        FROM hourly_diagnostic_file hdf
+        JOIN calendar_hours ch
+        ON hdf.calendar_hour = ch.calendar_hour
+    
+        JOIN calc_updated_uaf cuuaf
+        ON hdf.orispl_code = cuuaf.orispl_code
+        AND hdf.unitid = cuuaf.unitid
+        AND hdf.ertac_region = cuuaf.ertac_region
+        AND hdf.ertac_fuel_unit_type_bin != cuuaf.ertac_fuel_unit_type_bin
+    
+        JOIN calc_generation_parms cgp
+        ON cgp.op_date = ch.op_date
+        AND cgp.op_hour = ch.op_hour
+        AND cgp.ertac_region = cuuaf.ertac_region
+        AND cgp.ertac_fuel_unit_type_bin = cuuaf.ertac_fuel_unit_type_bin
+    
+        JOIN calendar_hierarchy_hours chh
+        ON ch.calendar_hour = chh.calendar_hour
+        AND cuuaf.ertac_region = chh.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = chh.ertac_fuel_unit_type_bin
          
+        JOIN calc_hourly_base chb
+        ON chb.op_date = ch.op_date
+        AND chb.op_hour = ch.op_hour
+        AND cuuaf.orispl_code = chb.orispl_code
+        AND cuuaf.unitid = chb.unitid
+        AND cuuaf.ertac_region = chb.ertac_region
+        AND cuuaf.ertac_fuel_unit_type_bin = chb.ertac_fuel_unit_type_bin
+    
+        WHERE (upper(cuuaf.camd_by_hourly_data_type) = 'FULL' 
+            OR upper(cuuaf.camd_by_hourly_data_type) = 'PARTIAL') 
+            AND cuuaf.state = ? 
+            AND cuuaf.ertac_fuel_unit_type_bin = ?
+            AND (cuuaf.online_start_date <= ? 
+            OR cuuaf.online_start_date IS NULL) 
+            AND cuuaf.offline_start_date < ?"""
+    
+        (where, inputs) = build_where(conn, 'hdf.', inputvars, True, True)
+        conn.execute(query + where, [state, fuel_unit_type_bin, str(inputvars['base_year']) + '-01-01', str(inputvars['future_year']) + '-01-01'] + inputs)
+       
         #
         #Switchers
         query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
@@ -711,7 +854,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             sum(COALESCE(by_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
             sum(COALESCE(fy_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
             sum(COALESCE(by_so2_mass,0)), 
-            sum(COALESCE(fy_so2_mass,0)), 
+            sum(COALESCE(fy_so2_mass,0)),
             sum(COALESCE(by_nox_mass,0)), 
             sum(COALESCE(fy_nox_mass,0)), 
             
@@ -758,8 +901,35 @@ def summarize_hourly_results(conn, inputvars, logfile):
         
         GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""")
  
-           
-    conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
+    if 'include-unit-day' in inputvars:       
+        conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, data_type, facility_name)
+        SELECT 
+        ertac_region, 
+        ertac_fuel_unit_type_bin, 
+        by_ertac_fuel_unit_type_bin, 
+        orispl_code, 
+        unitid, 
+        state, 
+        op_date,
+        sum(COALESCE(by_gload,0)), 
+        sum(COALESCE(fy_gload,0)), 
+        sum(COALESCE(by_heat_input,0)), 
+        sum(COALESCE(fy_heat_input,0)), 
+        sum(COALESCE(by_so2_mass,0)), 
+        sum(COALESCE(fy_so2_mass,0)), 
+        sum(COALESCE(by_nox_mass,0)), 
+        sum(COALESCE(fy_nox_mass,0)), 
+        data_type,
+        facility_name
+    
+        FROM hourly_activity_summary has
+        JOIN calendar_hours ch
+        ON has.calendar_hour = ch.calendar_hour
+        
+        GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""")
+        
+    if 'include-rg-hr' in inputvars:       
+        conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
         SELECT ertac_region, fuel_bin, data_type, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
     
         FROM
@@ -778,8 +948,9 @@ def summarize_hourly_results(conn, inputvars, logfile):
         
         WHERE hierarchy_hour IS NOT NULL) 
         GROUP BY ertac_region,  fuel_bin, data_type, calendar_hour, hierarchy_hour""")
-     
-    conn.execute("""INSERT INTO hourly_state_activity_summary(state, ertac_fuel_unit_type_bin, calendar_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass)
+
+    if 'include-st-hr' in inputvars:     
+        conn.execute("""INSERT INTO hourly_state_activity_summary(state, ertac_fuel_unit_type_bin, calendar_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass)
         SELECT state, fuel_bin, calendar_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0))    
         FROM
         (SELECT state, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass
@@ -922,11 +1093,12 @@ def print_to_index(inputvars, text):
         index.close()
 
 
-def write_final_data(conn, out_prefix, logfile):
+def write_final_data(conn, inputvars, out_prefix, logfile):
     """Write out projected ERTAC EGU data reports.
 
     Keyword arguments:
     conn       -- a valid database connection where the data is stored
+    inputvars      -- a dictionary of input options used in the nameing convention
     out_prefix -- optional prefix added to each output file name
     logfile    -- file where logging messages will be written
 
@@ -934,8 +1106,12 @@ def write_final_data(conn, out_prefix, logfile):
     # Final output data is exported as CSV files for reporting and use with
     # other programs.
     ertac_lib.export_table_to_csv('hourly_activity_summary', out_prefix+'post_results/', 'hourly_activity_summary.csv', conn, hourly_activity_summary_columns, logfile)
-    ertac_lib.export_table_to_csv('hourly_regional_activity_summary', out_prefix+'post_results/', 'hourly_regional_activity_summary.csv', conn, hourly_regional_summary_columns, logfile)
-    ertac_lib.export_table_to_csv('hourly_state_activity_summary', out_prefix+'post_results/', 'hourly_state_activity_summary.csv', conn, hourly_state_summary_columns, logfile)
+    if 'include-rg-hr' in inputvars:
+        ertac_lib.export_table_to_csv('hourly_regional_activity_summary', out_prefix+'post_results/', 'hourly_regional_activity_summary.csv', conn, hourly_regional_summary_columns, logfile)
+    if 'include-st-hr' in inputvars:
+        ertac_lib.export_table_to_csv('hourly_state_activity_summary', out_prefix+'post_results/', 'hourly_state_activity_summary.csv', conn, hourly_state_summary_columns, logfile)
+    if 'include-unit-day' in inputvars:
+        ertac_lib.export_table_to_csv('daily_unit_activity_summary', out_prefix+'post_results/', 'daily_unit_activity_summary.csv', conn, daily_unit_activity_summary_columns, logfile)
     ertac_lib.export_table_to_csv('annual_summary', out_prefix+'post_results/', 'annual_unit_summary.csv', conn, annual_summary_columns, logfile)
     #add state/regional dump
 
@@ -961,7 +1137,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", "run-integrity",
             "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "state=", "region=",
-            "fuel-bin=", "orisid=", "time-span=", "sql-database=", "config-file="])
+            "fuel-bin=", "orisid=", "time-span=","include-st-hr", "include-rg-hr", "include-unit-day","sql-database=", "config-file="])
     except getopt.GetoptError, err:
         print
         print str(err)
@@ -1029,6 +1205,12 @@ def main(argv=None):
             sql_database = arg
         elif opt in ("--config-file"):
             config_file = arg
+        elif opt in ("--include-st-hr"):
+            inputvars['include-st-hr'] = True
+        elif opt in ("--include-rg-hr"):
+            inputvars['include-rg-hr'] = True
+        elif opt in ("--include-unit-day"):
+            inputvars['include-unit-day'] = True
         else:
             assert False, "unhandled option"
 
@@ -1173,7 +1355,7 @@ def main(argv=None):
 
     # Export projection report tables as CSV files.
     logging.info("Writing out reports:")
-    write_final_data(dbconn, output_prefix, logfile)
+    write_final_data(dbconn, inputvars, output_prefix, logfile)
     logging.info("Finished writing reports.")
     dbconn.close()
     logging.info("Program ended at " + time.asctime())
