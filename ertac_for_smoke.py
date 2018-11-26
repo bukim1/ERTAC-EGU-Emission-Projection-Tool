@@ -12,7 +12,7 @@ VERSION = "2.1.1"
 
 import sys
 try:
-    import getopt, logging, os, time, re, csv, datetime, StringIO, httplib, calendar
+    import getopt, logging, os, time, re, csv, datetime, StringIO, calendar
 except ImportError:
     print >> sys.stderr, "Fatal error: can't import all required modules."
     print >> sys.stderr, "Run python -V to find your Python version."
@@ -404,8 +404,10 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY Annual SO2 (tons)', 'float', False, None),
                        ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
                        ('FY Annual NOx (tons)', 'float', False, None),
                        ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly NOx Mass Max (tons)', 'float', False, None),
                        ('FY OS NOx (tons)', 'float', False, None),
                        ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY OS heat input (mmbtu)', 'float', False, None),
@@ -1313,34 +1315,21 @@ def make_calendar_hours(base_year, future_year, conn):
 def create_annual_summary_file(conn, inputvars, logfile):
 
 
-    conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_nox_mass, fy_nox_rate, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type,
-        """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+""") 
+    conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_so2_max, fy_nox_mass, fy_nox_rate, fy_nox_max, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type,
+        """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+"""), 
+        """+", ".join([ 'fy_'+p[1]+'_mass' for p in ppollutants])+""")
         SELECT annual_summary.*,
-        """+", ".join([ 'fyer.'+p[1]+'_rate' for p in ppollutants])+"""  
+        """+", ".join([ 'fyer.'+p[1]+'_rate' for p in ppollutants])+""",  
+        """+", ".join([ 'fyer.'+p[1]+'_rate * fy_heat_input/2000.0' for p in ppollutants])+"""  
         FROM annual_summary
         LEFT JOIN fy_emission_rates fyer
         ON fyer.orispl_code = annual_summary.orispl_code
         AND fyer.unitid = annual_summary.unitid 
         AND fyer.ertac_fuel_unit_type_bin = annual_summary.ertac_fuel_unit_type_bin""")
-        
-    if inputvars['output_type'] == 'FF10':
-        for p in ppollutants:
-            if p[0] not in inputvars['pollutants']:
-                 for (orispl_code, unitid, ertac_fuel_unit_type_bin) in conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM annual_summary_with_other_pollutants""").fetchall(): 
-                     conn.execute("""UPDATE annual_summary_with_other_pollutants SET 
-                        fy_"""+p[1]+"""_mass = (SELECT ae FROM (SELECT SUM(ff10_future.ann_emis) as ae, ff10_future.cas, ff10_future.orispl_code, ff10_future.unitid, ff10_future.facil_category_code FROM ff10_future GROUP BY ff10_future.cas, ff10_future.orispl_code, ff10_future.unitid, ff10_future.facil_category_code) AS ff10 
-                        WHERE ff10.orispl_code = ?
-                        AND ff10.unitid = ?
-                        AND ff10.facil_category_code = ?
-                        AND ff10.cas = ?)
-                        WHERE annual_summary_with_other_pollutants.orispl_code = ?
-                        AND annual_summary_with_other_pollutants.unitid = ?
-                        AND annual_summary_with_other_pollutants.ertac_fuel_unit_type_bin = ?""", (orispl_code, unitid, ertac_fuel_unit_type_bin,p[0],orispl_code, unitid, ertac_fuel_unit_type_bin))    
-    else:
-        logging.error("ORL function is not yet available")
+
     conn.commit()
      
-def write_final_data(conn, inputvars, out_prefix, produce_dianostics, produce_annual, produce_hourly, logfile):
+def write_final_data(conn, inputvars, out_prefix, produce_diagnostics, produce_annual, produce_hourly, logfile):
     """Write out projected ERTAC EGU data reports.
 
     Keyword arguments:
@@ -1355,7 +1344,7 @@ def write_final_data(conn, inputvars, out_prefix, produce_dianostics, produce_an
     # Final output data is exported as CSV files for reporting and use with
     # other programs.
  
-    if produce_dianostics:
+    if produce_diagnostics:
         ertac_lib.export_table_to_csv('fy_emission_rates', out_prefix, 'fy_emission_rates.csv', conn, fy_emission_rate_columns, logfile)
         ertac_lib.export_table_to_csv('ertac_pusp_info_file', out_prefix, 'proc_pusp_info_file.csv', conn, pusp_info_file_columns, logfile)
         if inputvars['input_prefix_pp'] is not None:
@@ -1547,7 +1536,7 @@ def main(argv=None):
     print >> logfile, "Run with arguments" + argument_list
     print >> logfile, "Model code versions:"
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py', 'ertac_reports.py',
-                      'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql']:
+                      'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql', 'create_for_smoke_tables.sql']:
         print >> logfile, "  " + file_name + ": " + time.ctime(os.path.getmtime(os.path.join(sys.path[0], file_name)))
 
     logging.info("Creating database tables in memory.")

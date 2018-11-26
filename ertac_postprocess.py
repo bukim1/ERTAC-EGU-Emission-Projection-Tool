@@ -822,6 +822,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             fy_os_nox_rate, 
             by_non_os_nox_rate, 
             fy_non_os_nox_rate,
+            fy_so2_max,
+            fy_nox_max,
             data_type,
             gdu_flag,
             new_unit_flag, 
@@ -873,6 +875,9 @@ def summarize_hourly_results(conn, inputvars, logfile):
             2000*sum(COALESCE(by_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
             2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
     
+            max(COALESCE(fy_so2_mass,0)),
+            max(COALESCE(fy_nox_mass,0)),
+            
             has.data_type, 
             substr('YN', (coalesce(guc.unitid,-1) == -1)+1, 1), 
             substr('NY', (has.data_type == 'NEW')+1, 1), 

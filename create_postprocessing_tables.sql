@@ -416,8 +416,10 @@ by_non_os_nox_mass REAL,
 by_non_os_nox_rate REAL,
 fy_so2_mass REAL,
 fy_so2_rate REAL,
+fy_so2_max REAL,
 fy_nox_mass REAL,
 fy_nox_rate REAL,
+fy_nox_max REAL,
 fy_os_nox_mass REAL,
 fy_os_nox_rate REAL,
 fy_os_heat_input REAL,
@@ -433,7 +435,6 @@ new_unit_flag TEXT,
 data_type TEXT COLLATE NOCASE,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin,  orispl_code, unitid),
 UNIQUE (ertac_region, ertac_fuel_unit_type_bin, orispl_code, unitid));
-
 
 -- CALC_GENERATION_PARMS, p.53
 DROP TABLE IF EXISTS generation_parms;
