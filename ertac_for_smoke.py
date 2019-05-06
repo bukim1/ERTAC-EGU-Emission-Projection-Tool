@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 
 import sys
 try:
@@ -1314,9 +1314,8 @@ def make_calendar_hours(base_year, future_year, conn):
 
 def create_annual_summary_file(conn, inputvars, logfile):
 
-
     conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_so2_max, fy_nox_mass, fy_nox_rate, fy_nox_max, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type,
-        """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+"""), 
+        """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+""", 
         """+", ".join([ 'fy_'+p[1]+'_mass' for p in ppollutants])+""")
         SELECT annual_summary.*,
         """+", ".join([ 'fyer.'+p[1]+'_rate' for p in ppollutants])+""",  
@@ -1491,7 +1490,7 @@ def main(argv=None):
             assert False, "unhandled option"
 
     output_prefix = build_prefix(output_prefix, inputvars)
-    
+           
     if debug_level == "DEBUG":
         # Detailed logging to file for postmortem analysis.
         logging.basicConfig(

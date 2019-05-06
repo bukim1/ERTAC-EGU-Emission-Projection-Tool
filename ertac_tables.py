@@ -2,7 +2,7 @@
 
 """ERTAC EGU table characteristics"""
 
-VERSION = "2.1"
+VERSION = "2.1.2"
 # Updated to version 2.0g as of 9/30/2015.
 
 # For structural checking of CSV input data, and to create header rows for CSV

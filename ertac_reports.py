@@ -2,7 +2,7 @@
 
 """ERTAC EGU report characteristics"""
 
-VERSION = "2.1"
+VERSION = "2.1.2"
 # Updated to version 2.0c as of 9/3/2015.
 # From 9/2/2015 call, add columns for demand transfer effects to the following:
 # demand_generation_deficit

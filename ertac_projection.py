@@ -9,7 +9,7 @@ from __future__ import division
 import sys
 
 
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 # Updated to version 2.0k as of 9/30/2015.
 
 # Check to see if all necessary library modules can be loaded.  If not, we're

@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1"
+VERSION = "2.1.2"
 
 import sys
 try:
@@ -191,8 +191,10 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY Annual SO2 (tons)', 'float', False, None),
                        ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
                        ('FY Annual NOx (tons)', 'float', False, None),
                        ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                       ('FY Hourly NOx Mass Max (tons)', 'float', False, None),
                        ('FY OS NOx (tons)', 'float', False, None),
                        ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                        ('FY OS heat input (mmbtu)', 'float', False, None),

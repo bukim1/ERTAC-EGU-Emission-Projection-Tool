@@ -6,7 +6,7 @@
 
 from __future__ import division
 
-VERSION = "2.1"
+VERSION = "2.1.2"
 # Updated to version 2.0g as of 9/25/2015.
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
@@ -2916,6 +2916,7 @@ def fill_unit_hierarchy(conn, base_year, future_year, logfile):
 
         # Now get all new units not active during base year but active during
         # future year.
+        # jmj 12/28/2018 adding a check for non-EGUs to prevent addition of new non-EGUs
         new_units = conn.execute("""SELECT orispl_code, unitid, state
         FROM calc_updated_uaf
         WHERE ertac_region = ?
@@ -2923,6 +2924,7 @@ def fill_unit_hierarchy(conn, base_year, future_year, logfile):
         AND online_start_date >= ?
         AND online_start_date < ?
         AND offline_start_date > ?
+        AND camd_by_hourly_data_type <> 'Non-EGU'
         ORDER BY max_annual_ertac_uf DESC, orispl_code, unitid""",
         (region, fuel, ertac_lib.first_day_after(base_year),
         ertac_lib.first_day_after(future_year),
@@ -3058,6 +3060,7 @@ def calc_hourly_proxy(conn, base_year, future_year, logfile):
         AND online_start_date >= ?
         AND online_start_date < ?
         AND offline_start_date > ?
+        AND camd_by_hourly_data_type NOT IN ('Non-EGU')
         ORDER BY orispl_code, unitid""", (region, fuel, day_after_base,
         day_after_future, first_future)).fetchall():
 
