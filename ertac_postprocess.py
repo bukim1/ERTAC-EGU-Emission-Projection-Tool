@@ -254,7 +254,7 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
     
     if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf_v2.csv', 'calc_updated_uaf', conn, calc_uaf_columns, logfile):
-        print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"+in_prefix_proj+"x"
         sys.exit(1)  
     if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
