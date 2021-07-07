@@ -8,7 +8,7 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1.2"
+VERSION = "2.2"
 
 import sys
 try:
@@ -171,8 +171,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
                        ('Generation Capacity (MW)', 'float', False, None),
                        ('Nameplate Capacity (MW)', 'float', False, None),
-                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
-                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8784)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8784)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -207,7 +207,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('Generation Deficit Unit?', 'str', False, ['Y','N']),
                        ('Retirement Date', 'str', False, None),
                        ('New Unit?', 'str', False, ['Y','N']),
-                       ('data type', 'str', False, None))
+                       ('data type', 'str', False, None),
+                       ('Program Codes', 'str', False, None))
 
 
 def export_array_to_csv(array_data, prefix, basic_csv_file, connection, column_types, logfile):

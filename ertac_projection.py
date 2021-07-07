@@ -9,8 +9,8 @@ from __future__ import division
 import sys
 
 
-VERSION = "2.1.2"
-# Updated to version 2.0k as of 9/30/2015.
+VERSION = "2.2"
+# Updated to version 2.2 as of May 24, 2021.
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -267,7 +267,7 @@ def main(argv=None):
     print >> logfile, "Assigning generation and evaluating spinning reserve."
     for (region,) in dbconn.execute("""SELECT DISTINCT ertac_region
     FROM calc_generation_parms
-    ORDER BY ertac_region""").fetchall():
+    ORDER BY ertac_region""").fetchall():   
         assign_generation_all_fuels(dbconn, base_year, future_year, region, inputvars, logfile)
         evaluate_spinning_reserve(dbconn, region, logfile)
 
@@ -297,7 +297,7 @@ def main(argv=None):
     logging.info("Summarizing unit level generation and heat input.")
     print >> logfile
     print >> logfile, "Summarizing unit level generation and heat input."
-    summarize_unit_activity(dbconn, logfile)
+    summarize_unit_activity(dbconn, base_year, future_year, logfile)
 
     # Calculate future emissions.
     logging.info("Calculating future emissions.")
@@ -387,8 +387,22 @@ def load_intermediate_data(conn, in_prefix, logfile):
     if not ertac_lib.load_csv_into_table(in_prefix, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
         sys.exit(1)
+    
+    #jmj 7/24/2019 - abort code if calc_hourly_base is blank
+    (chb_rows,) = conn.execute("""SELECT count(*) FROM calc_hourly_base""").fetchone() 
+    if chb_rows == 0:
+        print >> sys.stderr, "Fatal error: calc_hourly_base contains no data and further processing cannot occur until this error is fixed"
+        sys.exit(1)
 
-
+    if ertac_tables.fuel_set != ertac_tables.default_fuel_set:
+        logging.info("Default fuel set overwritten.  Using: " + str(ertac_tables.fuel_set))
+        print >> logfile
+        print >> logfile, "Default fuel set overwritten.  Using: " + str(ertac_tables.fuel_set) 
+        
+    if ertac_tables.state_set != ertac_tables.default_state_set:
+        logging.info("Default state set overwritten.  Using: " + str(ertac_tables.state_set))
+        print >> logfile
+        print >> logfile, "Default state set overwritten.  Using: " + str(ertac_tables.state_set)       
 
 def assign_generation_all_fuels(conn, base_year, future_year, region, inputvars, logfile):
     """Assign generation (and excess) for all fuel bins for a single region.
@@ -408,91 +422,118 @@ def assign_generation_all_fuels(conn, base_year, future_year, region, inputvars,
 
         logging.info(ertac_lib.nice_str((region, fuel)))
         print >> logfile, ertac_lib.nice_str((region, fuel))
+        
+        #jmj 7/24/2019 check to make sure you have enough hours in the year in calc hourly base for a region fuel so that an error isn't thrown crashing the program
+        chb_rows = conn.execute("""SELECT count(ertac_region) 
+            FROM calc_hourly_base b
+            JOIN calendar_hours c
+            ON b.op_date = c.op_date
+            AND b.op_hour = c.op_hour
+            WHERE ertac_region = ? and ertac_fuel_unit_type_bin = ?
+            GROUP BY calendar_hour""",(region, fuel)).fetchall()
+        
+        if len(chb_rows) < ertac_lib.hours_in_year(base_year, future_year):
+            logging.info("Region/Fuel Unit Type Bin does not have "+str(hours_in_fy)+" hours of data available to process (region: " + region + ", fuel: " + fuel + ", hours of data: "+str(len(chb_rows))+")")
+            print >> logfile, "Region/Fuel Unit Type Bin does not have "+str(hours_in_fy)+" hours of data available to process (region: " + region + ", fuel: " + fuel + ", hours of data: "+str(len(chb_rows))+")"
+        else:
 
-        # Look up in input variables (for current region, fuel) new unit min/max
-        # sizes, demand cushion, 10 facilities for generic units, max UF,
-        # deficit_hour (typically 400), optimal load pct, new unit placement
-        # pct, new unit EF pct.
-        # For V2, add lookup of heat_rate_avg_method.  If not empty, will need to
-        # compute set of hourly heat rates instead of single annual rate for units
-        # in current region/fuel.  Calculation needs to be done here, before the
-        # call to project_hourly() which loops over hours for current region/fuel
-        # and calls assign_grown_gen() which uses the heat rate.
-        (heat_rate_avg_method, new_unit_max_size, new_unit_min_size, demand_cushion,
-        facility_1, facility_2, facility_3, facility_4, facility_5, facility_6,
-        facility_7, facility_8, facility_9, facility_10, max_uf, deficit_review_hour,
-        optimal_load_pct, new_unit_placement_pct, new_unit_ef_pct) = conn.execute("""SELECT
-        heat_rate_avg_method, new_unit_max_size, new_unit_min_size, demand_cushion,
-        facility_1, facility_2, facility_3, facility_4, facility_5, facility_6,
-        facility_7, facility_8, facility_9, facility_10, maximum_annual_ertac_uf, capacity_demand_deficit_review,
-        unit_optimal_load_threshold_determinant, new_unit_hierarchy_placement_percentile, new_unit_emission_factor_percentile
-        FROM calc_input_variables
-        WHERE ertac_region = ?
-        AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
-
-        if heat_rate_avg_method is not None:
-            calculate_heat_rates(conn, region, fuel, heat_rate_avg_method, logfile)
-
-        # Facility list is used to locate new generic units.  If supplied list
-        # is empty, build one.
-        facility_index = 0
-        facility_list = [facility_1, facility_2, facility_3, facility_4, facility_5,
-                         facility_6, facility_7, facility_8, facility_9, facility_10]
-        while None in facility_list:
-            facility_list.remove(None)
-        if len(facility_list) == 0:
-            # Get largest facilities (up to 10) based on total GLOAD.
-            facility_totals = conn.execute("""SELECT orispl_code, SUM(gload)
-            FROM calc_hourly_base
+            # Look up in input variables (for current region, fuel) new unit min/max
+            # sizes, demand cushion, 10 facilities for generic units, max UF,
+            # deficit_hour (typically 400), optimal load pct, new unit placement
+            # pct, new unit EF pct.
+            # For V2, add lookup of heat_rate_avg_method.  If not empty, will need to
+            # compute set of hourly heat rates instead of single annual rate for units
+            # in current region/fuel.  Calculation needs to be done here, before the
+            # call to project_hourly() which loops over hours for current region/fuel
+            # and calls assign_grown_gen() which uses the heat rate.
+            
+            #jmj 11/25/2019 add option to include hizg hours in analysis
+            (heat_rate_avg_method, new_unit_max_size, new_unit_min_size, demand_cushion,
+            facility_1, facility_2, facility_3, facility_4, facility_5, facility_6,
+            facility_7, facility_8, facility_9, facility_10, max_uf, deficit_review_hour,
+            optimal_load_pct, new_unit_placement_pct, new_unit_ef_pct, include_hizgs) = conn.execute("""SELECT
+            heat_rate_avg_method, new_unit_max_size, new_unit_min_size, demand_cushion,
+            facility_1, facility_2, facility_3, facility_4, facility_5, facility_6,
+            facility_7, facility_8, facility_9, facility_10, maximum_annual_ertac_uf, capacity_demand_deficit_review,
+            unit_optimal_load_threshold_determinant, new_unit_hierarchy_placement_percentile, new_unit_emission_factor_percentile, include_hizgs
+            FROM calc_input_variables
             WHERE ertac_region = ?
-            AND ertac_fuel_unit_type_bin = ?
-            GROUP BY orispl_code
-            ORDER BY SUM(gload) DESC, orispl_code""", (region, fuel)).fetchall()
-            facility_list = [facility for (facility, gload) in facility_totals][:10]
-        if len(facility_list) == 0:
-            print >> logfile, "Warning: no available facilities for placement of new generic units for region/fuel:" \
-                + ertac_lib.nice_str((region, fuel))
-
-        # Run the generation assignment algorithm until we don't need to add any
-        # more new generic units.
-        need_more_units = True        
-        while need_more_units:
-            capacity_needed = project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, future_year, inputvars, logfile)
-            # 3.5 Y
-            #jmj 6/2/2017 add the switch to turn off GDU creation
-            if capacity_needed > 0.0 and inputvars['add_generic_units']:
-                # 9Y.2, 9Y.3: Need to add units and restart.
-                new_unit_count = add_generic_units(conn, region, fuel, capacity_needed,
-                    new_unit_max_size, new_unit_min_size, facility_index, facility_list,
-                    max_uf, new_unit_placement_pct, base_year, future_year, logfile)
-                facility_index += new_unit_count
-                facility_index %= len(facility_list)
-            else:
-                # 9Y: Reached end of hours without needing more generic units,
-                # so can proceed to handling excess generation pool next.
-                need_more_units = False
-                
-        # If generic units were added, log hours where demand exceeded available generation.
-        # RW 9/14/2015 Include demand transfer results along with generic units
-        # if both occur at same hour.
-        
-        (added_capacity,) = conn.execute("""SELECT SUM(new_unit_size)
-        FROM generic_units_created
-        WHERE ertac_region = ?
-        AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
-        
-        if added_capacity is not None or added_capacity > 0.0:
-            #jmj 5/12/2017 now we just update this with the new generation from new units since
-            #the rest of the data got saved earlier on
-            conn.execute("""UPDATE demand_generation_deficit
-            SET generation_after_new_units = generation_available + ?
+            AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
+    
+            if heat_rate_avg_method is not None:
+                calculate_heat_rates(conn, region, fuel, heat_rate_avg_method, logfile)
+    
+            #jmj 11/26/2019 add the include hizgs variable to inputs to pass it down the functions 
+            inputvars['include_hizgs'] = (include_hizgs == "TRUE")
+            
+            # Facility list is used to locate new generic units.  If supplied list
+            # is empty, build one.
+            facility_index = 0
+            facility_list = [facility_1, facility_2, facility_3, facility_4, facility_5,
+                             facility_6, facility_7, facility_8, facility_9, facility_10]
+            while None in facility_list:
+                facility_list.remove(None)
+            if len(facility_list) == 0:
+                # Get largest facilities (up to 10) based on total GLOAD.
+                facility_totals = conn.execute("""SELECT orispl_code, SUM(gload)
+                FROM calc_hourly_base
+                WHERE ertac_region = ?
+                AND ertac_fuel_unit_type_bin = ?
+                GROUP BY orispl_code
+                ORDER BY SUM(gload) DESC, orispl_code""", (region, fuel)).fetchall()
+                facility_list = [facility for (facility, gload) in facility_totals][:10]
+            if len(facility_list) == 0:
+                print >> logfile, "Warning: no available facilities for placement of new generic units for region/fuel:" \
+                    + ertac_lib.nice_str((region, fuel))
+    
+            # Run the generation assignment algorithm until we don't need to add any
+            # more new generic units.
+            need_more_units = True        
+            created_units = 0
+            while need_more_units:
+                capacity_needed = project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, future_year, inputvars, logfile)
+                # 3.5 Y
+                #jmj 6/2/2017 add the switch to turn off GDU creation    
+                if capacity_needed > 0.0 and inputvars['add_generic_units']:
+                    # 9Y.2, 9Y.3: Need to add units and restart.
+                    new_unit_count = add_generic_units(conn, region, fuel, capacity_needed,
+                        new_unit_max_size, new_unit_min_size, facility_index, facility_list,
+                        max_uf, new_unit_placement_pct, base_year, future_year, logfile)
+                    facility_index += new_unit_count
+                    created_units += new_unit_count
+                    facility_index %= len(facility_list)
+                    
+                    #jmj 11/27/2020 added a break so that if 10,000 GDUs are created the loop breaks and puts a warning in the log file
+                    if created_units > 9999:
+                        print >> logfile, "Warning 10,000 GDUs were created in the following region and GDU loop was exited: " + ertac_lib.nice_str((region, fuel))
+                        logging.info("Warning 10,000 GDUs were created in the following region and GDU loop was exited.  See log for details.")
+                        need_more_units = False
+                else:
+                    # 9Y: Reached end of hours without needing more generic units,
+                    # so can proceed to handling excess generation pool next.
+                    need_more_units = False
+                    
+            # If generic units were added, log hours where demand exceeded available generation.
+            # RW 9/14/2015 Include demand transfer results along with generic units
+            # if both occur at same hour.
+            
+            (added_capacity,) = conn.execute("""SELECT SUM(new_unit_size)
+            FROM generic_units_created
             WHERE ertac_region = ?
-            AND ertac_fuel_unit_type_bin = ?""", (added_capacity, region, fuel))
-       
-        flag_negative_demand_transfers(conn, region, fuel, logfile)
-        
-        # 10: Allocate any excess generation pool up to optimal or maximal levels.
-        allocate_excess_generation(conn, region, fuel, max_uf, logfile)
+            AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
+            
+            if added_capacity is not None or added_capacity > 0.0:
+                #jmj 5/12/2017 now we just update this with the new generation from new units since
+                #the rest of the data got saved earlier on
+                conn.execute("""UPDATE demand_generation_deficit
+                SET generation_after_new_units = generation_available + ?
+                WHERE ertac_region = ?
+                AND ertac_fuel_unit_type_bin = ?""", (added_capacity, region, fuel))
+           
+            flag_negative_demand_transfers(conn, region, fuel, logfile)
+            
+            # 10: Allocate any excess generation pool up to optimal or maximal levels.
+            allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_year, logfile)
 
 def calculate_heat_rates(conn, region, fuel, heat_rate_avg_method, logfile):
     """Calculate hour-specific heat rates, on an hourly, daily, monthly ... basis.
@@ -977,9 +1018,9 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
     max_future_generation = 0.0
     #jmj 3/10/2017 added this variable to make sure another hour later in the process isn't higher 
     max_unaccounted_excess_generation = 0
-    max_unaccounted_excess_generation_hiearchy_hour = 0
+    max_unaccounted_excess_generation_hierarchy_hour = 0
     deficit_review_hour_generation_deficit = 0
-    deficit_review_hour_generation_hiearchy_hour = 0
+    deficit_review_hour_generation_hierarchy_hour = 0
     
     # 2
     # RW 9/18/2015 Instead of updating hourly growth rates in preprocessor, add
@@ -998,7 +1039,7 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
         #jmj 7/14/2017 the max future generation calculation wasn't considering transfers
         if max_future_generation > future_projected_generation+net_demand_transfer:
             max_future_generation = future_projected_generation+net_demand_transfer
-            deficit_review_hour_generation_hiearchy_hour = hiearchy_hour
+            deficit_review_hour_generation_hierarchy_hour = hierarchy_hour
         # 3: Calculate TotalProxy, AFYGrowth, AFYGR for current region, fuel, date, hour.
         (total_proxy,) = conn.execute("""SELECT SUM(gload_proxy)
         FROM calc_generation_proxy
@@ -1041,9 +1082,9 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
         AND op_hour = ?""", (region, fuel, date, hour)).fetchone()
 
         # 4N.1, 4.2
-        assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, logfile)
+        assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, base_year, future_year, logfile)
         # 5
-        assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year, future_year, logfile)
+        assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year, future_year, inputvars, logfile)
         
         # Did any new or existing unit hit a limit at this hour, leaving excess
         # generation?
@@ -1081,10 +1122,12 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
                 AND hourly.hierarchy_hour = ?
                 AND online_start_date <= ? 
                 AND offline_start_date >= ? """, (region, fuel, hierarchy_hour, future_date, future_date)).fetchone()
-                                      
+            
+            if available_capacity is None:
+                available_capacity = 0                           
             if available_capacity-assigned_gen < excess_generation_pool and max_unaccounted_excess_generation < excess_generation_pool - (available_capacity-assigned_gen):
                 max_unaccounted_excess_generation = excess_generation_pool - (available_capacity-assigned_gen)
-                max_unaccounted_excess_generation_hiearchy_hour = hierarchy_hour
+                max_unaccounted_excess_generation_hierarchy_hour = hierarchy_hour
         else:
             excess_generation_pool = 0.0
             
@@ -1105,7 +1148,7 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
             conn.execute("""DELETE FROM hourly_diagnostic_file
                     WHERE ertac_region = ?
                     AND ertac_fuel_unit_type_bin = ?""", (region, fuel))
-        print >> logfile,  "Hiearchy Hour: "+str(deficit_review_hour_generation_hiearchy_hour)+ " needed capacity during the deficit review of " + str(deficit_review_hour_generation_deficit)
+        print >> logfile,  "Hiearchy Hour: "+str(deficit_review_hour_generation_hierarchy_hour)+ " needed capacity during the deficit review of " + str(deficit_review_hour_generation_deficit)
         return deficit_review_hour_generation_deficit
     
     #jmj 3/10/2017 we do need a generic unit to deal with excess generation
@@ -1117,7 +1160,7 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
                     WHERE ertac_region = ?
                     AND ertac_fuel_unit_type_bin = ?""", (region, fuel))
         
-        print >> logfile, "Hiearchy Hour: " +str(max_unaccounted_excess_generation_hiearchy_hour)+" triggered a max_unaccounted_excess_generation of " + str(max_unaccounted_excess_generation)
+        print >> logfile, "Hiearchy Hour: " +str(max_unaccounted_excess_generation_hierarchy_hour)+" triggered a max_unaccounted_excess_generation of " + str(max_unaccounted_excess_generation)
         return max_unaccounted_excess_generation
                     
     # If we didn't take the early exit to add generic units and restart the
@@ -1178,7 +1221,10 @@ def log_deficit_hours(conn, region, fuel, logfile):
                 AND hourly.hierarchy_hour = ?
                 AND online_start_date <= ? 
                 AND offline_start_date >= ? """, (region, fuel, hierarchy_hour, future_date, future_date)).fetchone()
-
+            
+            if available_capacity is None:
+                available_capacity = 0     
+                
             if future_projected_generation + net_demand_transfer > available_capacity:                    
                 conn.execute("""INSERT INTO demand_generation_deficit
                 (ertac_region, ertac_fuel_unit_type_bin, calendar_hour, hierarchy_hour,
@@ -1202,7 +1248,7 @@ def log_deficit_hours(conn, region, fuel, logfile):
                 future_projected_generation + net_demand_transfer, available_capacity, available_capacity,0, ''))
 
 
-def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, logfile):
+def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, base_year, future_year, logfile):
     """Assign proxy generation to all new units, subject to operating limits.
 
     Keyword arguments:
@@ -1214,15 +1260,16 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
     calendar hour -- the hour number since midnight January 1 (1-8760)
     hierarchy_hour -- the rank number of the hour, from high load to low (1-8760)
     max_uf -- default maximum utilization fraction for any unit in this region/fuel
+    future_year -- the year which is being projected
     logfile -- file where logging messages will be written
 
     """
     # Assign proxy generation in the hourly_diagnostic_file based on
     # calc_generation_proxy, subject to hourly HI and annual UF limits.
 
-    #jmj 10/22/2013 commenting out the original sql draw to get infomration about future gen and total proxy
+    #jmj 10/22/2013 commenting out the original sql draw to get information about future gen and total proxy
     #for (state, plant, unit, gload) in conn.execute("""SELECT state, orispl_code, unitid, gload_proxy
-    for (state, plant, unit, gload, future_gen, total_proxy) in conn.execute("""SELECT state, orispl_code, unitid, gload_proxy, future_projected_generation, total_proxy_generation
+    for (state, plant, unit, gload, future_gen, total_proxy) in conn.execute("""SELECT state, prox.orispl_code, prox.unitid, gload_proxy, future_projected_generation, total_proxy_generation
     FROM calc_generation_proxy AS prox
     LEFT JOIN calc_generation_parms AS parms
     ON prox.ertac_region = parms.ertac_region
@@ -1265,13 +1312,14 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
         if unit_max_uf is None:
             unit_max_uf = max_uf
 
-        if unit_heat_rate is not None and gload is not None:
+        if unit_heat_rate is not None and gload is not None and gload > 0.0:
             heat_input = unit_heat_rate * gload / 1000.0
         else:
             heat_input = 0.0
-        
+            
         # 6, 7
-        if unit_max_hi is not None and heat_input > unit_max_hi:
+        # jmj 9/4/2019 correct for max heat input check (was > should be >=)
+        if unit_max_hi is not None and heat_input >= unit_max_hi:
             hourly_hi_limit = 'Y'
             heat_input = unit_max_hi
             gload = heat_input * 1000.0 / unit_heat_rate
@@ -1279,7 +1327,7 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
             hourly_hi_limit = 'N'
 
         if unit_max_hi is not None and unit_max_uf is not None:
-            unit_annual_hi_limit_value = 8760 * unit_max_hi * unit_max_uf
+            unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year, future_year) * unit_max_hi * unit_max_uf
             if cumulative_hi + heat_input > unit_annual_hi_limit_value:
                 annual_hi_limit = 'Y'
                 heat_input = unit_annual_hi_limit_value - cumulative_hi
@@ -1304,15 +1352,15 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
         conn.execute("""INSERT INTO hourly_diagnostic_file
         (ertac_region, ertac_fuel_unit_type_bin, state, orispl_code, unitid,
         calendar_hour, hierarchy_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit, 
-        cumulative_hi, cumulative_gen, cumulative_op_hours, gload, heat_input, heat_rate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        cumulative_hi, cumulative_gen, cumulative_op_hours, gload, heat_input, heat_rate, generation_flag)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (region, fuel, state, plant, unit,
         calendar_hour, hierarchy_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit, 
-        cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, unit_heat_rate))
+        cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, unit_heat_rate, 'P' ))
 
 
 
-def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year, future_year, logfile):
+def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year, future_year, inputvars, logfile):
     """Assign grown generation to all existing units, subject to operating limits.
 
     Keyword arguments:
@@ -1341,21 +1389,33 @@ def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
     FROM calc_input_variables
     WHERE ertac_region = ?
     AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
-
-    for (state, plant, unit, gload) in conn.execute("""SELECT hourly.state, hourly.orispl_code, hourly.unitid,
-    CASE WHEN COALESCE(uaf.capacity_limited_unit_flag, 'N') = 'Y'
+    
+    if inputvars['include_hizgs']:
+        query_bindings = (base_year, future_year, base_year, future_year, region, fuel, date, hour)
+    else:
+        query_bindings = (base_year, future_year, region, fuel, date, hour)
+        
+    for (state, plant, unit, hizg_hi, gload) in conn.execute("""SELECT hourly.state, hourly.orispl_code, hourly.unitid, """ + 
+    ("""CASE WHEN COALESCE(gload, 0) = 0
+    AND REPLACE(hourly.op_date, ?, ?) < uaf.offline_start_date
+    THEN hourly.heat_input
+    ELSE NULL END,""" if inputvars['include_hizgs'] else """NULL,""") +
+    """CASE WHEN COALESCE(uaf.capacity_limited_unit_flag, 'N') = 'Y'
     OR REPLACE(hourly.op_date, ?, ?) >= uaf.offline_start_date
     THEN 0.0
-    ELSE hourly.gload END
+    ELSE hourly.gload END 
     FROM calc_hourly_base hourly
     JOIN calc_updated_uaf uaf
     ON hourly.orispl_code = uaf.orispl_code
     AND hourly.unitid = uaf.unitid
     AND hourly.ertac_fuel_unit_type_bin = uaf.ertac_fuel_unit_type_bin
+    JOIN calendar_hours c
+    ON hourly.op_date = c.op_date
+    AND hourly.op_hour = c.op_hour
     WHERE hourly.ertac_region = ?
     AND hourly.ertac_fuel_unit_type_bin = ?
     AND hourly.op_date = ?
-    AND hourly.op_hour = ?""", (base_year, future_year, region, fuel, date, hour)).fetchall():
+    AND hourly.op_hour = ?""", query_bindings).fetchall():
 
         if gload is None:
             gload = 0.0
@@ -1408,24 +1468,32 @@ def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
         if unit_max_uf is None:
             unit_max_uf = max_uf
 
-        if unit_heat_rate is not None and gload is not None:
+        if unit_heat_rate is not None and gload is not None and gload > 0:
             heat_input = unit_heat_rate * gload / 1000.0
+            hizg_hi = None #jmj 11/25/2019 set hizg to none since the unit got generation in this hour
         else:
-            heat_input = 0.0
+            #jmj 6/10/2019 get heat input from calc_hour_base so we can maintain any start up/shutdown/maintenance emissions    
+            heat_input = hizg_hi if hizg_hi is not None else 0.0
+                    
         # 6, 7
-        if unit_max_hi is not None and heat_input > unit_max_hi:
+        # jmj 9/4/2019 correct for max heat input check (was > should be >=)
+        if unit_max_hi is not None and heat_input >= unit_max_hi:
             hourly_hi_limit = 'Y'
             heat_input = unit_max_hi
-            gload = heat_input * 1000.0 / unit_heat_rate
+            #jmj 6/10/2019 make sure gload isn't recalculated if its a hizg hour   
+            if hizg_hi is None:
+                gload = heat_input * 1000.0 / unit_heat_rate
         else:
             hourly_hi_limit = 'N'
 
         if unit_max_hi is not None and unit_max_uf is not None:
-            unit_annual_hi_limit_value = 8760 * unit_max_hi * unit_max_uf
+            unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year, future_year) * unit_max_hi * unit_max_uf
             if cumulative_hi + heat_input > unit_annual_hi_limit_value:
                 annual_hi_limit = 'Y'
                 heat_input = unit_annual_hi_limit_value - cumulative_hi
-                gload = heat_input * 1000.0 / unit_heat_rate
+                #jmj 6/10/2019 make sure gload isn't recalculated if its a hizg hour
+                if hizg_hi is None:
+                    gload = heat_input * 1000.0 / unit_heat_rate
             else:
                 annual_hi_limit = 'N'
         else:
@@ -1447,12 +1515,12 @@ def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
         (ertac_region, ertac_fuel_unit_type_bin, state, orispl_code, unitid,
         calendar_hour, hierarchy_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit,
         cumulative_hi, cumulative_gen, cumulative_op_hours, gload, heat_input,
-        heat_rate, heat_rate_type, heat_rate_limit_flag)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        heat_rate, heat_rate_type, heat_rate_limit_flag, generation_flag)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (region, fuel, state, plant, unit,
         calendar_hour, hierarchy_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit,
         cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input,
-        unit_heat_rate, heat_rate_type, heat_rate_limit_flag))
+        unit_heat_rate, heat_rate_type, heat_rate_limit_flag, 'GH' if (hizg_hi is not None) else 'G'))
 
 
 
@@ -1492,8 +1560,8 @@ def add_generic_units(conn, region, fuel, capacity_needed, new_unit_max_size, ne
         conn.execute("""UPDATE generic_unit_counts SET units_created = units_created + 1 WHERE state = ?""", (state,))
         (state_code, units_created) = conn.execute("""SELECT state_code, units_created FROM generic_unit_counts WHERE state = ?""", (state,)).fetchone()
         unit = "G" + state_code + str(units_created).zfill(3)
-        logging.info("Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit)))
-        print >> logfile, "Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit))
+        logging.info("  Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit)))
+        print >> logfile, "  Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit))
         plant_columns = conn.execute("SELECT " + ertac_tables.uaf_plant_column_names + """ FROM calc_updated_uaf
         WHERE ertac_region = ?
         AND orispl_code = ?""", (region, plant)).fetchone()
@@ -1587,7 +1655,8 @@ def flag_negative_demand_transfers(conn, region, fuel, logfile):
         logging.info("Warning code failed due to negative demand transfers.  See log for details.")
         exit(0)
         
-def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
+        
+def allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_year, logfile):
     """10: Allocate any excess generation in two passes, first raising outputs to optimal threshold, then to maximum.
 
     Keyword arguments:
@@ -1595,6 +1664,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
     region -- the current region being processed
     fuel -- the current fuel bin being processed
     max_uf -- default maximum utilization fraction for any unit in this region/fuel
+    future_year -- the year which is being projected
     logfile -- file where logging messages will be written
 
     """
@@ -1617,8 +1687,8 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
         # 11: First pass, do not raise above optimal level.
         # For V2, get specific value of unit_heat_rate used at this hour from
         # hourly_diagnostic_file, instead of constant ertac_heat_rate from UAF.
-        for (plant, unit, unit_order, calendar_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit, initial_gload, initial_heat_input, unit_heat_rate) in conn.execute("""SELECT hier.orispl_code,
-        hier.unitid, hier.unit_allocation_order, hourly.calendar_hour, hourly.hourly_hi_limit, hourly.annual_hi_limit, hourly.annual_oh_limit, hourly.gload, hourly.heat_input, hourly.heat_rate
+        for (plant, unit, unit_order, calendar_hour, hourly_hi_limit, annual_hi_limit, annual_oh_limit, initial_gload, initial_heat_input, unit_heat_rate, generation_flag) in conn.execute("""SELECT hier.orispl_code,
+        hier.unitid, hier.unit_allocation_order, hourly.calendar_hour, hourly.hourly_hi_limit, hourly.annual_hi_limit, hourly.annual_oh_limit, hourly.gload, hourly.heat_input, hourly.heat_rate, hourly.generation_flag
         FROM calc_unit_hierarchy hier
         JOIN hourly_diagnostic_file hourly
         ON hier.ertac_region = hourly.ertac_region
@@ -1629,7 +1699,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
         AND hier.ertac_fuel_unit_type_bin = ?
         AND hourly.hierarchy_hour = ?
         ORDER BY unit_allocation_order""", (region, fuel, hierarchy_hour)).fetchall():
-
+ 
             (future_date,) = conn.execute("""SELECT future_date
             FROM calendar_hours
             WHERE calendar_hour = ?""", (calendar_hour,)).fetchone()
@@ -1675,7 +1745,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
 
             if unit_max_uf is None:
                 unit_max_uf = max_uf
-                       
+               
             if unit_heat_rate is not None and unit_optimal_load is not None:
                 unit_opt_hi = unit_heat_rate * unit_optimal_load / 1000.0
                 if initial_heat_input < unit_opt_hi and excess_generation > 0.0 and last_hour_annual_hi_limit == 'N' and last_hour_annual_oh_limit == 'N' and future_date >= online and future_date < offline:
@@ -1689,7 +1759,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
                         gload = heat_input * 1000.0 / unit_heat_rate
                     # Annual limit?
                     if unit_max_hi is not None and unit_max_uf is not None:
-                        unit_annual_hi_limit_value = 8760 * unit_max_hi * unit_max_uf
+                        unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year, future_year) * unit_max_hi * unit_max_uf
                         headroom = unit_annual_hi_limit_value - last_hour_cumulative_hi
                         if heat_input > initial_heat_input + headroom:
                             # We used all available capacity through the end of the year.
@@ -1697,7 +1767,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
                             heat_input = initial_heat_input + headroom
                             gload = heat_input * 1000.0 / unit_heat_rate
                             last_hour_annual_hi_limit = 'Y' # rw fixed typo == vs = found by jj
-
+            
             if gload > 0.0:
                 cumulative_op_hours += 1.0
             #jmj 3/9/2017 add the code to limit by operating hours too  
@@ -1706,15 +1776,15 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
                 annual_oh_limit = 'Y'
                 heat_input = 0
                 gload = 0
-                
+       
             # Change values at current hour.
             conn.execute("""UPDATE hourly_diagnostic_file
-            SET hourly_hi_limit = ?, annual_hi_limit = ?, annual_oh_limit = ?, cumulative_hi = ?, cumulative_gen = ?, cumulative_op_hours = ?, gload = ?, heat_input = ?
+            SET hourly_hi_limit = ?, annual_hi_limit = ?, annual_oh_limit = ?, cumulative_hi = ?, cumulative_gen = ?, cumulative_op_hours = ?, gload = ?, heat_input = ?, generation_flag = ?
             WHERE ertac_region = ?
             AND ertac_fuel_unit_type_bin = ?
             AND orispl_code = ?
             AND unitid = ?
-            AND hierarchy_hour = ?""", (hourly_hi_limit, annual_hi_limit, annual_oh_limit, cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, region, fuel, plant, unit, hierarchy_hour))
+            AND hierarchy_hour = ?""", (hourly_hi_limit, annual_hi_limit, annual_oh_limit, cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, generation_flag+'O', region, fuel, plant, unit, hierarchy_hour))
 
             # Change cumulative HI and annual limit flag for last hour.
             conn.execute("""UPDATE hourly_diagnostic_file
@@ -1786,20 +1856,20 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
 
             if unit_max_uf is None:
                 unit_max_uf = max_uf
-
-            if unit_heat_rate is not None and unit_max_hi is not None:
-                if initial_heat_input < unit_max_hi and excess_generation > 0.0 and last_hour_annual_hi_limit == 'N' and last_hour_annual_oh_limit == 'N' and future_date >= online and future_date < offline:
+                
+            if unit_heat_rate is not None and unit_max_hi is not None:    
+                if initial_heat_input < unit_max_hi and excess_generation > 0.0 and last_hour_annual_hi_limit == 'N' and last_hour_annual_oh_limit == 'N' and future_date >= online and future_date < offline:    
                     gload = initial_gload + excess_generation
                     excess_generation = 0.0
                     heat_input = unit_heat_rate * gload / 1000.0
                     # Hourly limit?
-                    if heat_input > unit_max_hi:
+                    if heat_input > unit_max_hi:       
                         excess_generation += (heat_input - unit_max_hi) * 1000.0 / unit_heat_rate
                         heat_input = unit_max_hi
                         gload = heat_input * 1000.0 / unit_heat_rate
                     # Annual limit?
                     if unit_max_hi is not None and unit_max_uf is not None:
-                        unit_annual_hi_limit_value = 8760 * unit_max_hi * unit_max_uf
+                        unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year, future_year) * unit_max_hi * unit_max_uf
                         headroom = unit_annual_hi_limit_value - last_hour_cumulative_hi
                         if heat_input > initial_heat_input + headroom:
                             # We used all available capacity through the end of the year.
@@ -1821,15 +1891,15 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
                 annual_oh_limit = 'Y'
                 heat_input = 0
                 gload = 0
-            
+                       
             # Change values at current hour.
             conn.execute("""UPDATE hourly_diagnostic_file
-            SET hourly_hi_limit = ?, annual_hi_limit = ?, annual_oh_limit = ?, cumulative_hi = ?, cumulative_gen = ?, cumulative_op_hours = ?, gload = ?, heat_input = ?
+            SET hourly_hi_limit = ?, annual_hi_limit = ?, annual_oh_limit = ?, cumulative_hi = ?, cumulative_gen = ?, cumulative_op_hours = ?, gload = ?, heat_input = ?, generation_flag = ?
             WHERE ertac_region = ?
             AND ertac_fuel_unit_type_bin = ?
             AND orispl_code = ?
             AND unitid = ?
-            AND hierarchy_hour = ?""", (hourly_hi_limit, annual_hi_limit, annual_oh_limit, cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, region, fuel, plant, unit, hierarchy_hour))
+            AND hierarchy_hour = ?""", (hourly_hi_limit, annual_hi_limit, annual_oh_limit, cumulative_hi + heat_input, cumulative_gen + gload, cumulative_op_hours, gload, heat_input, generation_flag+'M', region, fuel, plant, unit, hierarchy_hour))
 
             # Change cumulative HI and annual limit flag for last hour.
             conn.execute("""UPDATE hourly_diagnostic_file
@@ -1846,6 +1916,7 @@ def allocate_excess_generation(conn, region, fuel, max_uf, logfile):
         WHERE ertac_region = ?
         AND ertac_fuel_unit_type_bin = ?
         AND temporal_allocation_order = ?""", (excess_generation, region, fuel, hierarchy_hour))
+
 
 def evaluate_spinning_reserve(conn, region, logfile):
     """Determine whether there is enough reserve capacity at each hour for the current region.
@@ -1937,7 +2008,7 @@ def evaluate_spinning_reserve(conn, region, logfile):
 
 
 
-def summarize_unit_activity(conn, logfile):
+def summarize_unit_activity(conn, base_year, future_year, logfile):
     """23.5Y1: Summarize unit level generation and heat input.
 
     Keyword arguments:
@@ -1999,7 +2070,7 @@ def summarize_unit_activity(conn, logfile):
         by_hours = ?
         WHERE rowid = ?""", (fac_name, max_hi, heat_rate, os_heat_rate, nonos_heat_rate, gen_cap, hours_at_max, by_gen, by_hi, by_hours, rowid))
     conn.execute("""UPDATE unit_level_activity
-    SET uf = fy_hi / (8760.0 * max_ertac_hi_hourly_summer)""")
+    SET uf = fy_hi / (? * max_ertac_hi_hourly_summer)""",(ertac_lib.hours_in_year(base_year, future_year),))
 
 
 
@@ -2487,10 +2558,10 @@ def summarize_future_capacity(conn, logfile):
     WHERE max_deficit > 0.0;""")
 
     #jmj 6/2/2017 add a check to make sure growth rates were honored
-    for (region, unit_type, calc_growth_rate, growth_rate) in conn.execute("SELECT cfd.ertac_region, cfd.ertac_fuel_unit_type_bin, (fy_gen_including_transfers-COALESCE(fy_transfers,0))/by_gen,annual_growth_factor FROM capacity_and_fy_demand cfd join calc_growth_rates cgr on cfd.ertac_region = cgr.ertac_region and cfd.ertac_fuel_unit_type_bin = cgr.ertac_fuel_unit_type_bin").fetchall():
+    for (region, unit_type, calc_growth_rate, growth_rate) in conn.execute("SELECT cfd.ertac_region, cfd.ertac_fuel_unit_type_bin, (COALESCE(fy_gen_including_transfers,0)-COALESCE(fy_transfers,0))/by_gen,COALESCE(annual_growth_factor,0) FROM capacity_and_fy_demand cfd join calc_growth_rates cgr on cfd.ertac_region = cgr.ertac_region and cfd.ertac_fuel_unit_type_bin = cgr.ertac_fuel_unit_type_bin").fetchall():
         if round(calc_growth_rate,12) != round(growth_rate,12):
             logging.info("Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(round(calc_growth_rate,12)) + ", input variable annual growth rate: " + str(round(growth_rate,12)))
-            print >> logfile, "Warning: annual growth rate was honored not for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(calc_growth_rate) + ", input variable annual growth rate: " + str(growth_rate)
+            print >> logfile, "Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(calc_growth_rate) + ", input variable annual growth rate: " + str(growth_rate)
             
 def write_final_data(conn, out_prefix, logfile):
     """Write out projected ERTAC EGU data reports.

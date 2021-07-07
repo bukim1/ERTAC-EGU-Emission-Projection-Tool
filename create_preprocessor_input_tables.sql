@@ -204,6 +204,7 @@ capacity_limited_unit_flag TEXT COLLATE NOCASE,
 modifier_email_address TEXT,
 unit_completeness_check TEXT,
 hours_cap REAL,
+program_codes TEXT,
 PRIMARY KEY (orispl_code, unitid, ertac_fuel_unit_type_bin));
 
 -- ERTAC_GROWTH_RATES, p.36
@@ -316,6 +317,7 @@ new_unit_hierarchy_placement_percentile REAL NOT NULL,
 new_unit_emission_factor_percentile REAL NOT NULL,
 unit_min_optimal_load_threshold_determinant REAL NOT NULL,
 heat_input_calculation_percentile REAL NOT NULL,
+include_hizgs TEXT COLLATE NOCASE,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
 
 -- ERTAC_CONTROL_EMISSIONS, p.40

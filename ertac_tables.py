@@ -2,7 +2,8 @@
 
 """ERTAC EGU table characteristics"""
 
-VERSION = "2.1.2"
+VERSION = "2.2"
+import sys, os, csv
 # Updated to version 2.0g as of 9/30/2015.
 
 # For structural checking of CSV input data, and to create header rows for CSV
@@ -25,20 +26,51 @@ VERSION = "2.1.2"
 base_year_range = ('2007', '2020')
 future_year_range = ('2007', '2050')
 
-# All state abbreviations, for checks that don't need the states lookup table.
-state_set = set(['AK', 'AL', 'AR', 'AS', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE',
+#jmj 9/17/2017 now allows for the state set to be read in just in case you want to run this in canada or something
+default_state_set = set(['AK', 'AL', 'AR', 'AS', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE',
                  'FL', 'GA', 'GU', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY',
                  'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MP', 'MS', 'MT',
                  'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK',
                  'OR', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UM', 'UT',
                  'VA', 'VI', 'VT', 'WA', 'WI', 'WV', 'WY'])
 
-# All allowed fuel bin types.
-fuel_set = set(['BOILER GAS', 'COAL', 'COMBINED CYCLE GAS', 'OIL', 'SIMPLE CYCLE GAS'])
+try:
+    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'rU')
+    states = []
+    cr = csv.reader(cf)
+    for row in cr:
+        if row[0] != 'State FIPS':
+            states.append(row[1])                
+    state_set = set(states)
+except IOError:
+    # All allowed fuel bin types.
+    # All state abbreviations, for checks that don't need the states lookup table.
+    state_set = default_state_set
 
-# Other fuel types where demand may be transferred, from 7/8/2015 call.
-# Joseph had already added DEMAND RESPONSE in the regular fuels.
-expanded_fuel_set = fuel_set | set(['CHP', 'DEMAND RESPONSE', 'HYDRO', 'NUCLEAR', 'RENEWABLE', 'SOLAR', 'WIND'])
+
+#jmj 9/7/2017 now allows for a file to be read in with fuel unit type bins set in the same spot as the state file
+default_fuel_set = set(['BOILER GAS', 'COAL', 'COMBINED CYCLE GAS', 'OIL', 'SIMPLE CYCLE GAS'])
+try:
+    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'fuel_unit_type_bins.csv'), 'rU')
+    fuels = []
+    optional_fuels = []
+    cr = csv.reader(cf)
+    for row in cr:
+        if row[0] != 'Fuel/Unit Type Bin':
+            if row[1] == 'Y':
+                fuels.append(row[0])
+            else:
+                optional_fuels.append(row[0])                
+    fuel_set = set(fuels)
+    optional_fuel_set = set(optional_fuels)
+except IOError:
+    # All allowed fuel bin types.
+    fuel_set = default_fuel_set
+    # Other fuel types where demand may be transferred, from 7/8/2015 call.
+    # Joseph had already added DEMAND RESPONSE in the regular fuels.
+    optional_fuel_set = set(['CHP', 'DEMAND RESPONSE', 'HYDRO', 'NUCLEAR', 'RENEWABLE', 'SOLAR', 'WIND'])
+
+expanded_fuel_set = fuel_set | optional_fuel_set
 
 # All averaging methods allowed for emission factors and heat rate, from 6/24/2015 call.
 avg_method_set = set(['HOURLY', 'DAILY', 'MONTHLY', 'QUARTERLY', 'OS/NON-OS', 'ANNUAL'])
@@ -171,7 +203,8 @@ uaf_columns_v1 = (('orispl_code', 'str', True, None),
                ('unit_completeness_check', 'str', False, None))
 
 # From 8/10/2015 call, added new hours_cap column for V2.
-uaf_columns = uaf_columns_v1 + (('hours_cap', 'float', False, None),) # single item needs trailing comma
+uaf_columns = uaf_columns_v1 + (('hours_cap', 'float', False, None),
+                                ('program_codes', 'str', False, None)) # single item needs trailing comma
 
 # From 8/20/2015 call, added more columns only to calc_updated_uaf, for the
 # per-unit min/max limits (hard and statistical) and annual/seasonal averages
@@ -261,6 +294,7 @@ input_variable_columns_v1 = (('ERTAC Region', 'str', True, None),
 
 # 8/20/2015 New version of input variables from Mark with many inserted optional
 # columns.
+# jmj 11/25/2019 add a column for including including hizg hours 
 input_variable_columns = (
     ('ERTAC Region', 'str', True, None),
     ('ERTAC Fuel/Unit type bin', 'str', True, fuel_set),
@@ -309,7 +343,8 @@ input_variable_columns = (
     ('New unit percentile for placement in the Unit Allocation Hierarchy', 'float', True, (0.0, 100.0)),
     ('Percentile for emission factor calculations for new units.', 'float', True, (0.0, 100.0)),
     ('Unit minimum optimal load threshold percentile', 'float', True, (0.0, 100.0)),
-    ('Percentile for maximum heat input hourly calculations', 'float', True, (0.0, 100.0))
+    ('Percentile for maximum heat input hourly calculations', 'float', True, (0.0, 100.0)),
+    ('Include HIZG hours?', 'str', False, ('TRUE','FALSE'))
 )
 
 control_emission_columns = (('ORISPL_CODE', 'str', True, None),

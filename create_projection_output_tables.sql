@@ -197,5 +197,6 @@ co2_mass REAL,
 co2_rate REAL,
 co2_rate_type TEXT,
 co2_rate_limit_flag TEXT,
+generation_flag TEXT,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin, hierarchy_hour, orispl_code, unitid),
 UNIQUE (ertac_region, calendar_hour, ertac_fuel_unit_type_bin, orispl_code, unitid));

@@ -2,7 +2,7 @@
 
 """ERTAC EGU report characteristics"""
 
-VERSION = "2.1.2"
+VERSION = "2.2"
 # Updated to version 2.0c as of 9/3/2015.
 # From 9/2/2015 call, add columns for demand transfer effects to the following:
 # demand_generation_deficit
@@ -116,6 +116,7 @@ group_caps = (('Group', None, None, None),
 
 # Additional flag columns based on 8/10/2015 call for period types and limits for heat rate and emission factors.
 # CO2 columns added for potential future use after 8/20/2015 call.
+# jmj 10/23/2019 - added column for "generation flag" so you can keep track of where in the code the generation gets added/subtracted
 hourly_diagnostic_file = (('ERTAC Region', None, None, None),
                           ('ERTAC Fuel/Unit Type Bin', None, None, None),
                           ('State', None, None, None),
@@ -145,4 +146,5 @@ hourly_diagnostic_file = (('ERTAC Region', None, None, None),
                           ('CO2_mass (tons)', None, None, None),
                           ('CO2_rate (tons/mmBtu)', None, None, None),
                           ('CO2 Period Type', None, None, None),
-                          ('CO2 Limit Flag', None, None, None))
+                          ('CO2 Limit Flag', None, None, None),
+                          ('Generation Flag', None, None, None))

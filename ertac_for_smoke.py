@@ -8,7 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1.2"
+VERSION = "2.2"
+#Updated to v2.2 as of May 24, 2021
 
 import sys
 try:
@@ -71,6 +72,7 @@ Usage: %s [OPTION]...
   -q, --quiet       quiet operation (no status messages).
   -v, --verbose     verbose status messages (default).
   --run-qa                              run additional calculations to qa the output
+  --suppress-pdw                        suppress warnings about the percentage distribution not being equal to 100 percent if it is within 1 percent
   --sql-database=existing database.     use sql database at location rather than loading inputs
   --input-prefix-pre=prefix.            prefix used in preprocessor
   --input-prefix-proj=prefix.           prefix used in projection
@@ -304,7 +306,7 @@ ff10_hourly_future_columns = (('country_cd', 'str', True, None),
                        ('hrvl21', 'float', False, None),
                        ('hrvl22', 'float', False, None),
                        ('hrvl23', 'float', False, None), 
-                       ('coment', 'str', True, None))
+                       ('comment', 'str', True, None))
                  
 pusp_info_file_columns = (
                        ('ertac_region', 'str', True, None),
@@ -384,8 +386,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
                        ('Generation Capacity (MW)', 'float', False, None),
                        ('Nameplate Capacity (MW)', 'float', False, None),
-                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
-                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8784)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8784)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -420,7 +422,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('Generation Deficit Unit?', 'str', False, ['Y','N']),
                        ('Retirement Date', 'str', False, None),
                        ('New Unit?', 'str', False, ['Y','N']),
-                       ('data type', 'str', False, None))
+                       ('data type', 'str', False, None),
+                       ('program_codes', 'str', False, None))
 
 annual_summary_with_other_pollutants_columns = annual_summary_columns + (
                        ('FY Annual PM2.5 (tons)', 'float', False, None),
@@ -473,6 +476,15 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, input_prefix_fs,
     else:
         ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, ertac_tables.calc_hourly_columns, logfile)
     
+    if ertac_tables.fuel_set != ertac_tables.default_fuel_set:
+        logging.info("Default fuel set overwritten.  Using: " + str(ertac_tables.fuel_set))
+        print >> logfile
+        print >> logfile, "Default fuel set overwritten.  Using: " + str(ertac_tables.fuel_set) 
+        
+    if ertac_tables.state_set != ertac_tables.default_state_set:
+        logging.info("Default state set overwritten.  Using: " + str(ertac_tables.state_set))
+        print >> logfile
+        print >> logfile, "Default state set overwritten.  Using: " + str(ertac_tables.state_set)       
 
 def export_table_to_csv_with_smoke_header(table_name, prefix, basic_csv_file, connection, column_types, header, logfile, frmt = None):
     """Export table contents to a CSV file.
@@ -910,7 +922,7 @@ def process_results(conn, inputvars, logfile):
                 LEFT JOIN ertac_pusp_info_file eauaf            
                 ON eauaf.orispl_code = cuuaf.orispl_code
                 AND eauaf.unitid = cuuaf.unitid
-                AND cuuaf.ertac_region = eauaf.ertac_region
+                AND cuuaf.ertac_region = eauaf.ertac_region 
                 AND cuuaf.ertac_fuel_unit_type_bin = eauaf.ertac_fuel_unit_type_bin
                   
                 WHERE cuuaf.state = ? 
@@ -1075,7 +1087,7 @@ def run_diagnostics(conn, inputvars, logfile):
     check_additional_variables_consistency(conn, inputvars, logfile)
 
 def check_uaf_consistency(conn, inputvars, logfile):
-    missing_location_info = conn.execute("""SELECT orispl_code, unitid, state, camd_by_hourly_data_type FROM calc_updated_uaf WHERE fips_code IS NULL OR plant_latitude IS NULL OR plant_longitude IS NULL ORDER BY state""").fetchall()
+    missing_location_info = conn.execute("""SELECT orispl_code, unitid, state, camd_by_hourly_data_type FROM calc_updated_uaf WHERE offline_start_date >= ? AND (fips_code IS NULL OR plant_latitude IS NULL OR plant_longitude IS NULL) ORDER BY state""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(missing_location_info) > 0:
         print >> logfile, "Warning:", len(missing_location_info), "facility/units in UAF are missing lat/long information necessary for SMOKE processing:"
@@ -1091,7 +1103,7 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             print >> logfile, "  " + ertac_lib.nice_str(unit)
 
     unit_uaf_not_pusp_info_file = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM (SELECT * FROM calc_updated_uaf where offline_start_date >= ? ORDER BY state) 
-    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file """, [inputvars['future_year']+'01-01']).fetchall()
+    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file """, (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(unit_uaf_not_pusp_info_file) > 0:
         print >> logfile, "Warning:", len(unit_uaf_not_pusp_info_file), "facility/units in UAF did not match any ORISPL_CODE, UNITID, ERTAC_FUEL_UNIT_BIN_TYPE in PUSP Info File:"
@@ -1099,8 +1111,8 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             result = conn.execute("""SELECT orispl_code, unitid, state, ertac_fuel_unit_type_bin  FROM calc_updated_uaf WHERE orispl_code = ? AND unitid =? AND ertac_fuel_unit_type_bin = ?""", unit).fetchone()
             print >> logfile, "  " + ertac_lib.nice_str(result)
 
-    unit_pusp_info_file_not_uaf = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM ertac_pusp_info_file 
-    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM calc_updated_uaf""").fetchall()
+    unit_pusp_info_file_not_uaf = conn.execute("""SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM (SELECT * FROM ertac_pusp_info_file WHERE offline_start_date >= ?) 
+    EXCEPT SELECT orispl_code, unitid, ertac_fuel_unit_type_bin FROM calc_updated_uaf""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(unit_pusp_info_file_not_uaf) > 0:
         print >> logfile, "Warning:", len(unit_pusp_info_file_not_uaf), "facility/units in ertac_pusp_info_file did not match any ORISPL_CODE, UNITID, ERTAC_FUEL_UNIT_BIN_TYPE in UAF:"
@@ -1109,14 +1121,14 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
             print >> logfile, "  " + ertac_lib.nice_str(result)
             
     for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel', 'scc']:    
-        result = conn.execute("""SELECT orispl_code, unitid, state, plantid, pointid, stackid, segment  FROM ertac_pusp_info_file WHERE """+column+""" IS NULL  ORDER BY state""").fetchall()
+        result = conn.execute("""SELECT orispl_code, unitid, state, plantid, pointid, stackid, segment  FROM ertac_pusp_info_file WHERE """+column+""" IS NULL AND offline_start_date >= ? ORDER BY state""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
         if len(result) > 0:
             print >> logfile, "Warning:", len(result), "facility/units were missing "+column+" and will use default"
             for unit in result:
                 print >> logfile, "  " + ertac_lib.nice_str(unit)
                 
     for (column) in ['stkhgt', 'stkdiam', 'stktemp', 'stkflow', 'stkvel']:    
-        result = conn.execute("""SELECT orispl_code, unitid, state, plantid, pointid, stackid, segment  FROM ertac_pusp_info_file WHERE """+column+""" IS NOT NULL AND """+column+""" = 0  ORDER BY state""").fetchall()
+        result = conn.execute("""SELECT orispl_code, unitid, state, plantid, pointid, stackid, segment  FROM ertac_pusp_info_file WHERE """+column+""" IS NOT NULL AND """+column+""" = 0 AND offline_start_date >= ? ORDER BY state""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
         if len(result) > 0:
             print >> logfile, "Warning:", len(result), "facility/units have data in "+column+" that resembles fugitive emission traits"
             for unit in result:
@@ -1125,9 +1137,15 @@ def check_pusp_info_file_consistency(conn, inputvars, logfile):
     for (polcode, column) in [['NOX', 'nox'],['SO2', 'so2']]+ppollutants:    
         if polcode not in inputvars['pollutants']:   
             if not polcode.isdigit(): 
-                result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING SUM(COALESCE("""+column+"""_percentage,0)) != 100.0  ORDER BY state""").fetchall()
+                if inputvars['suppress_pdw']:
+                    result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file WHERE offline_start_date >= ? GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING (SUM(COALESCE("""+column+"""_percentage,0)) >= 101.0 or SUM(COALESCE("""+column+"""_percentage,0)) <= 99.0) ORDER BY state""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
+                else:
+                    result = conn.execute("""SELECT SUM(COALESCE("""+column+"""_percentage,0)) as total, orispl_code, unitid FROM ertac_pusp_info_file WHERE offline_start_date >= ? GROUP BY orispl_code, unitid, ertac_fuel_unit_type_bin HAVING SUM(COALESCE("""+column+"""_percentage,0)) != 100.0 ORDER BY state""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
                 if len(result) > 0:
-                    print >> logfile, "Warning:", len(result), "facility/units in had a percentage distribution for "+polcode+" emissions that did not sum to 100:"
+                    if inputvars['suppress_pdw']:
+                        print >> logfile, "Warning:", len(result), "facility/units in had a percentage distribution for "+polcode+" emissions that did summed to 101 or more or 99 or less:"
+                    else:
+                        print >> logfile, "Warning:", len(result), "facility/units in had a percentage distribution for "+polcode+" emissions that did not sum to 100:"
                     for unit in result:
                         if unit[0] != 100:
                             result2 = conn.execute("""SELECT orispl_code, unitid, state, ? FROM ertac_pusp_info_file WHERE orispl_code = ? AND unitid =? """, unit).fetchone()
@@ -1145,16 +1163,18 @@ def check_additional_control_consistency(conn, inputvars, logfile):
     """
     print >> logfile
     
-    unit_additional_control_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM ertac_base_year_rates_and_additional_controls 
-    EXCEPT SELECT orispl_code, unitid FROM calc_updated_uaf""").fetchall()
+    unit_additional_control_not_uaf = conn.execute("""SELECT orispl_code, unitid 
+    FROM ertac_base_year_rates_and_additional_controls 
+    WHERE factor_end_date >= ?
+    EXCEPT SELECT orispl_code, unitid FROM calc_updated_uaf""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(unit_additional_control_not_uaf) > 0:
         print >> logfile, "Warning:", len(unit_additional_control_not_uaf), "facility/units in additional control did not match any ORISPL_CODE, UNITID in UAF:"
         for unit in unit_additional_control_not_uaf:
             print >> logfile, "  " + ertac_lib.nice_str(unit)
 
-    unit_additional_control_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM (SELECT * FROM calc_updated_uaf ORDER BY state) 
-    EXCEPT SELECT orispl_code, unitid FROM ertac_base_year_rates_and_additional_controls""").fetchall()
+    unit_additional_control_not_uaf = conn.execute("""SELECT orispl_code, unitid FROM (SELECT * FROM calc_updated_uaf WHERE offline_start_date >= ? ORDER BY state) 
+    EXCEPT SELECT orispl_code, unitid FROM ertac_base_year_rates_and_additional_controls""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(unit_additional_control_not_uaf) > 0:
         print >> logfile, "Warning:", len(unit_additional_control_not_uaf), "facility/units in UAF have no control entries:"
@@ -1168,7 +1188,8 @@ def check_additional_control_consistency(conn, inputvars, logfile):
     WHERE factor_start_date IS NOT NULL
     AND factor_end_date IS NOT NULL
     AND factor_start_date > factor_end_date
-    ORDER BY orispl_code, unitid, pollutant_code, factor_start_date, factor_end_date""").fetchall()
+    AND factor_end_date >= ?
+    ORDER BY orispl_code, unitid, pollutant_code, factor_start_date, factor_end_date""",(ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     if len(inconsistent_dates) > 0:
         print >> logfile, "Warning: control/emissions has factor_start_date > factor_end_date:"
@@ -1181,9 +1202,10 @@ def check_additional_control_consistency(conn, inputvars, logfile):
 
     multiple_factors = conn.execute("""SELECT orispl_code, unitid, pollutant_code, COUNT(*)
     FROM ertac_base_year_rates_and_additional_controls
+    WHERE factor_end_date >= ?
     GROUP BY orispl_code, unitid, pollutant_code
     HAVING COUNT(*) > 1
-    ORDER BY orispl_code, unitid, pollutant_code""").fetchall()
+    ORDER BY orispl_code, unitid, pollutant_code""", (ertac_lib.first_day_of(inputvars['future_year']),)).fetchall()
 
     for (plant, unit, poll, cnt) in multiple_factors:
         factors = conn.execute("""SELECT factor_start_date, factor_end_date
@@ -1314,7 +1336,7 @@ def make_calendar_hours(base_year, future_year, conn):
 
 def create_annual_summary_file(conn, inputvars, logfile):
 
-    conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_so2_max, fy_nox_mass, fy_nox_rate, fy_nox_max, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type,
+    conn.execute("""INSERT INTO annual_summary_with_other_pollutants(orispl_code, unitid, facility_name, state, fips_code, ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, max_unit_heat_input, ertac_heat_rate, generation_capacity, nameplate_capacity, fy_op_hours, fy_op_hours_max, by_uf, fy_uf, by_gload, by_heat_input, fy_gload, fy_heat_input, by_so2_mass, by_so2_rate, by_nox_mass, by_nox_rate, by_os_nox_mass, by_os_nox_rate, by_os_heat_input, by_os_gload, by_non_os_nox_mass, by_non_os_nox_rate, fy_so2_mass, fy_so2_rate, fy_so2_max, fy_nox_mass, fy_nox_rate, fy_nox_max, fy_os_nox_mass, fy_os_nox_rate, fy_os_heat_input, fy_os_gload, fy_non_os_nox_mass, fy_non_os_nox_rate, hierarchy_order, longitude, latitude, gdu_flag, retirement_date, new_unit_flag, data_type, program_codes, 
         """+", ".join([ 'fy_'+p[1]+'_rate' for p in ppollutants])+""", 
         """+", ".join([ 'fy_'+p[1]+'_mass' for p in ppollutants])+""")
         SELECT annual_summary.*,
@@ -1328,7 +1350,7 @@ def create_annual_summary_file(conn, inputvars, logfile):
 
     conn.commit()
      
-def write_final_data(conn, inputvars, out_prefix, produce_diagnostics, produce_annual, produce_hourly, logfile):
+def write_final_data(conn, inputvars, input_prefix_fs, out_prefix, produce_diagnostics, produce_annual, produce_hourly, logfile):
     """Write out projected ERTAC EGU data reports.
 
     Keyword arguments:
@@ -1349,32 +1371,44 @@ def write_final_data(conn, inputvars, out_prefix, produce_diagnostics, produce_a
         if inputvars['input_prefix_pp'] is not None:
             ertac_lib.export_table_to_csv('annual_summary_with_other_pollutants', inputvars['input_prefix_pp'], 'annual_summary_with_other_pollutants.csv', conn, annual_summary_with_other_pollutants_columns, logfile)    
     else:     
+        header = ["#FORMAT=FF10_POINT", 
+                  "#COUNTRY=US", 
+                  "#YEAR="+inputvars['future_year'], 
+                  "#PROJECTION YEAR     "+inputvars['future_year'], 
+                  "#TYPE     Point Sources", 
+                  "#DESC     ANNUAL", 
+                  "#DESC     Contact: ertacegu@gmail.com", 
+                  "#DESC     ERTAC Version: "+VERSION,
+                  "#DESC     ERTAC to SMOKE Run Date: " + time.strftime("%m/%d/%y"), 
+                  "#DESC     Emissions, in short tons, from ERTAC"]
+        
+        print >> logfile
+        if input_prefix_fs is None:
+            csv_file = "ertac_additional_smoke_headers.csv"
+        else:
+            csv_file = input_prefix_fs + "ertac_additional_smoke_headers.csv"
+        try:
+            cf = open(csv_file, 'rU')
+            for ha in csv.reader(cf): 
+                if ha[0][:6] != "#DESC ":
+                    print >> logfile, "Error: line in header additions not properly formatted by beginning with '#DESC ' and will not be included: "+ha[0]
+                else: 
+                    header = header + ha
+            print >> logfile, "Loading input data from file: " + csv_file
+        except IOError:
+            print >> logfile, "File: " + csv_file + " -- Could not be read."
+    
         if inputvars['output_type'] == 'ORL':
-            header = ["#ORL      POINT", 
-                      "#TYPE     Point Sources", 
-                      "#COUNTRY  US", 
-                      "#YEAR     "+inputvars['base_year'], 
-                      "#DESC     ANNUAL", 
-                      "#DESC     ertacegu@gmail.com", 
-                      "#DESC     Emissions, in short tons, from ERTAC (Dropped unused columns after Column 46)", 
-                      "#DESC     " + time.strftime("%m/%d/%y")]
             if produce_annual:
+                header[0] = "#ORL      POINT"
                 export_table_to_csv_with_smoke_header('orl_future', out_prefix, 'orl_future.csv', conn, orl_columns, header, logfile)
             if produce_hourly:
                 header[0] = "#ORL      POINT"
-                header[6] = "#DESC     Emissions, in short tons, from ERTAC"
             #update the hourly one so its not csv but space
                 export_table_to_csv_with_smoke_header('pt_hourly_future', out_prefix, 'pt_hourly_future.csv', conn, pt_columns, [], logfile, [2,3,15,12,12,12,5,8,3,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,10])
         else:    
-            header = ["#FORMAT=FF10_POINT", 
-                      "#COUNTRY=US", 
-                      "#YEAR="+inputvars['future_year'], 
-                      "#TYPE     Point Sources", 
-                      "#DESC     ANNUAL", 
-                      "#DESC     ertacegu@gmail.com", 
-                      "#DESC     Emissions, in short tons, from ERTAC", 
-                      "#DESC     " + time.strftime("%m/%d/%y")]
             if produce_annual:
+                header[0] = "#FORMAT=FF10_POINT"
                 export_table_to_csv_with_smoke_header('ff10_future', out_prefix, 'ff10_future.csv', conn, ff10_columns, header, logfile)
             if produce_hourly:
                 header[0] = "#FORMAT=FF10_HOURLY_POINT"
@@ -1382,6 +1416,9 @@ def write_final_data(conn, inputvars, out_prefix, produce_diagnostics, produce_a
             
 
 def create_for_smoke_tables(conn):
+    ertac_lib.run_script_file('create_preprocessor_output_tables.sql', conn)
+    ertac_lib.run_script_file('create_projection_output_tables.sql', conn)
+    ertac_lib.run_script_file('create_postprocessing_tables.sql', conn)
     ertac_lib.run_script_file('create_for_smoke_tables.sql', conn)
 
     # Also need state lookup table, for abbreviation-FIPS code conversion.
@@ -1403,7 +1440,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
             ["help", "debug", "quiet", "verbose", 
             "input-prefix-pre=", "input-prefix-proj=", "input-prefix-fs=", "input-prefix-pp=", "output-prefix=", "orl-files=", 
-            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "monthly", "runtz"])
+            "state=", "ignore-pollutants=", "input-type=", "output-type=", "run-qa", "suppress-pdw", "monthly", "runtz"])
         
     except getopt.GetoptError, err:
         print
@@ -1424,6 +1461,7 @@ def main(argv=None):
     inputvars['input_type'] = 'ERTAC'
     inputvars['output_type'] = 'FF10'
     inputvars['run_qa'] = False
+    inputvars['suppress_pdw'] = False
     inputvars['notz'] = True
     inputvars['input_prefix_pp'] = None
     argument_list = ''
@@ -1443,7 +1481,9 @@ def main(argv=None):
         elif opt in ("-v", "--verbose"):
             debug_level = "INFO"
         elif opt in ("--run-qa"):
-            debug_level = True
+            inputvars['run_qa'] = True
+        elif opt in ("--suppress-pdw"):
+            inputvars['suppress_pdw'] = True
         elif opt in ("--input-prefix-pre"):
             input_prefix_pre = arg
         elif opt in ("--input-prefix-proj"):
@@ -1589,8 +1629,12 @@ def main(argv=None):
         rpos= [['CLI', False]]
    
     for rpo in rpos: 
-        dbconn.execute("""DELETE FROM orl_future""")
-        dbconn.execute("""DELETE FROM ff10_future""")
+        if (inputvars['output_type'] == 'ORL'):
+            dbconn.execute("""DELETE FROM orl_future""")
+            dbconn.execute("""DELETE FROM pt_hourly_future""")
+        else:
+            dbconn.execute("""DELETE FROM ff10_future""")
+            dbconn.execute("""DELETE FROM ff10_hourly_future""")
         if rpo[1]:
             if not os.path.exists('forsmokerpo'):
                 os.makedirs('forsmokerpo')
@@ -1608,8 +1652,6 @@ def main(argv=None):
                 m = '0'+str(inputvars['month'])
             else: 
                 m = str(inputvars['month'])
-                
-            
             
             inputvars['start_date'] = inputvars['base_year']+"-"+m+"-01"
             inputvars['end_date'] = inputvars['base_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
@@ -1638,17 +1680,18 @@ def main(argv=None):
             # Export projection report tables as CSV files.
             if inputvars['monthly']:
                 logging.info("Writing out reports:")
-                write_final_data(dbconn, inputvars, new_new_output_prefix, False, False, True, logfile)
+                write_final_data(dbconn, inputvars, input_prefix_fs, new_new_output_prefix, False, False, True, logfile)
 
   
         dbconn.execute("""UPDATE ff10_future SET ann_emis = """ + " + ".join([m+"_value" for m in month_names]))    
         logging.info("Writing out reports:")
-        write_final_data(dbconn, inputvars, new_output_prefix,False,True,  (not inputvars['monthly']), logfile)
+        write_final_data(dbconn, inputvars, input_prefix_fs, new_output_prefix,False,True, (not inputvars['monthly']), logfile)
     
     if inputvars['input_prefix_pp'] is not None:    
         logging.info("Creating Annual Summary File")
-        create_annual_summary_file(dbconn, inputvars, logfile)          
-    write_final_data(dbconn, inputvars, output_prefix,True,False,False, logfile)
+        create_annual_summary_file(dbconn, inputvars, logfile)   
+              
+    write_final_data(dbconn, inputvars, input_prefix_fs, output_prefix, True,False,False, logfile)
 
     logging.info("Finished writing reports.")
     dbconn.close()

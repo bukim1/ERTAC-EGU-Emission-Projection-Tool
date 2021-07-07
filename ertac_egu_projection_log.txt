@@ -1,0 +1,20 @@
+Program started at Wed Jul 07 13:23:42 2021
+ERTAC EGU projection version: 2.2
+Using ertac_lib version: 2.2
+Using ertac_tables version: 2.2
+Using ertac_reports version: 2.2
+Running under python version: 2.7.9 (default, Dec 10 2014, 12:28:03) [MSC v.1500 64 bit (AMD64)]
+Using sqlite3 module version: 2.6.0
+Linked against sqlite3 database library version: 3.6.21
+Model code versions:
+  ertac_projection.py: Wed Jul 07 11:12:09 2021
+  ertac_lib.py: Thu Dec 03 13:14:11 2020
+  ertac_tables.py: Wed Jan 22 15:29:40 2020
+  ertac_reports.py: Wed Oct 23 09:46:15 2019
+  create_preprocessor_output_tables.sql: Wed Jan 22 15:40:59 2020
+  create_projection_output_tables.sql: Wed Oct 23 10:06:23 2019
+
+Loading input data from file: .\states.csv
+File: .\states.csv; read 57 lines, stored 57 data rows in table: states
+
+File: calc_updated_uaf_v2.csv -- Could not be read.

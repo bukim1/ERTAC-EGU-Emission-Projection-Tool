@@ -4,7 +4,7 @@
 
 """Convert ERTAC EGU input files from V1 to V2 format where needed"""
 
-VERSION = "2.0b"
+VERSION = "2.2"
 # Updated to version 2.0b as of 8/13/2015.
 
 # Check to see if all necessary library modules can be loaded.  If not, we're

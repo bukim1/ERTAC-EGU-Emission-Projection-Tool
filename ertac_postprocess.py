@@ -8,7 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.1.2"
+VERSION = "2.2"
+#Updated to v2.2 as of May 24, 2021
 
 import sys
 try:
@@ -62,10 +63,10 @@ hourly_activity_summary_columns = (('ertac region', 'str', True, None),
                        ('oris', 'str', True, None),
                        ('unit id', 'str', True, None),
                        ('state', 'str', True, state_set),
-                       ('calendar hour', 'int', True, (0, 8760)),
-                       ('hierarchy hour', 'int', True, (0, 8760)),
+                       ('calendar hour', 'int', True, (0, 8784)),
+                       ('hierarchy hour', 'int', True, (0, 8784)),
                        ('Operating at Max HI', 'str', True, ('Y','N')),
-                       ('BY hierarchy hour', 'int', True, (0, 8760)),
+                       ('BY hierarchy hour', 'int', True, (0, 8784)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
@@ -100,8 +101,8 @@ daily_unit_activity_summary_columns = (('ertac region', 'str', True, None),
 hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
                        ('data type', 'str', False, None),
-                       ('calendar hour', 'int', True, (0, 8760)),
-                       ('hierarchy hour', 'int', True, (0, 8760)),
+                       ('calendar hour', 'int', True, (0, 8784)),
+                       ('hierarchy hour', 'int', True, (0, 8784)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('Number of units op hour max', 'int', True, None),
@@ -116,7 +117,7 @@ hourly_regional_summary_columns = (('ertac region', 'str', True, None),
 
 hourly_state_summary_columns = (('state', 'str', True, state_set),
                        ('ertac fuel unit type bin', 'str', True, fuel_set),
-                       ('calendar hour', 'int', True, (0, 8760)),
+                       ('calendar hour', 'int', True, (0, 8784)),
                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
                        ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
@@ -138,8 +139,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
                        ('Generation Capacity (MW)', 'float', False, None),
                        ('Nameplate Capacity (MW)', 'float', False, None),
-                       ('Number of FY Hours Operating', 'int', True, (0, 8760)),
-                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8760)),
+                       ('Number of FY Hours Operating', 'int', True, (0, 8784)),
+                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8784)),
                        ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
                        ('Base year generation (MW-hrs)', 'float', False, None),
@@ -174,7 +175,8 @@ annual_summary_columns = (('oris', 'str', True, None),
                        ('Generation Deficit Unit?', 'str', False, ['Y','N']),
                        ('Retirement Date', 'str', False, None),
                        ('New Unit?', 'str', False, ['Y','N']),
-                       ('data type', 'str', False, None))
+                       ('data type', 'str', False, None),
+                       ('program_codes', 'str', False, None))
 
 
 gen_parms_columns = (('ertac_region', 'str', True, None),
@@ -254,7 +256,7 @@ def load_intermediate_data(conn, in_prefix_pre, in_prefix_proj, inputvars, logfi
     ertac_lib.load_csv_into_table(in_prefix_proj, 'generic_units_created.csv', 'generic_units_created', conn, generic_units_created, logfile)
     
     if not ertac_lib.load_csv_into_table(in_prefix_proj, 'calc_updated_uaf_v2.csv', 'calc_updated_uaf', conn, calc_uaf_columns, logfile):
-        print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"+in_prefix_proj+"x"
+        print >> sys.stderr, "Fatal error: could not load necessary file calc_updated_uaf"
         sys.exit(1)  
     if not ertac_lib.load_csv_into_table(in_prefix_pre, 'calc_hourly_base.csv', 'calc_hourly_base', conn, calc_hourly_columns, logfile):
         print >> sys.stderr, "Fatal error: could not load necessary file calc_hourly_base"
@@ -827,7 +829,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             data_type,
             gdu_flag,
             new_unit_flag, 
-            facility_name)
+            facility_name,
+            program_codes)
         SELECT has.ertac_region, 
             has.ertac_fuel_unit_type_bin, 
             by_ertac_fuel_unit_type_bin, 
@@ -845,35 +848,35 @@ def summarize_hourly_results(conn, inputvars, logfile):
             cuuaf.nameplate_capacity,
             sum(hourly_hi_limit='Y'), 
             sum(COALESCE(fy_heat_input,0)>0), 
-            sum(COALESCE(by_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
-            sum(COALESCE(fy_heat_input,0))/(max_ertac_hi_hourly_summer*8760), 
+            sum(COALESCE(by_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
+            sum(COALESCE(fy_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
             sum(COALESCE(by_gload,0)), 
             sum(COALESCE(fy_gload,0)), 
             sum(COALESCE(by_heat_input,0)), 
             sum(COALESCE(fy_heat_input,0)), 
-            sum(COALESCE(by_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            sum(COALESCE(fy_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            sum(COALESCE(by_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            sum(COALESCE(fy_gload*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
+            sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            sum(COALESCE(by_gload*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            sum(COALESCE(fy_gload*(calendar_hour > ? and calendar_hour <= ?),0)), 
             sum(COALESCE(by_so2_mass,0)), 
             sum(COALESCE(fy_so2_mass,0)),
             sum(COALESCE(by_nox_mass,0)), 
             sum(COALESCE(fy_nox_mass,0)), 
             
-            sum(COALESCE(by_nox_mass*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            sum(COALESCE(fy_nox_mass*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            sum(COALESCE(by_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
-            sum(COALESCE(fy_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
+            sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0)), 
+            sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0)), 
             
             2000*sum(COALESCE(by_so2_mass,0))/sum(COALESCE(by_heat_input,0)), 
             2000*sum(COALESCE(fy_so2_mass,0))/sum(COALESCE(fy_heat_input,0)), 
             2000*sum(COALESCE(by_nox_mass,0))/sum(COALESCE(by_heat_input,0)), 
             2000*sum(COALESCE(fy_nox_mass,0))/sum(COALESCE(fy_heat_input,0)),
             
-            2000*sum(COALESCE(by_nox_mass*(calendar_hour > 2880 and calendar_hour <= 6552),0))/ sum(COALESCE(by_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            2000*sum(COALESCE(fy_nox_mass*(calendar_hour > 2880 and calendar_hour <= 6552),0))/ sum(COALESCE(fy_heat_input*(calendar_hour > 2880 and calendar_hour <= 6552),0)), 
-            2000*sum(COALESCE(by_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
-            2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= 2880 or calendar_hour > 6552),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= 2880 or calendar_hour > 6552),0)), 
+            2000*sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            2000*sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            2000*sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
+            2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
     
             max(COALESCE(fy_so2_mass,0)),
             max(COALESCE(fy_nox_mass,0)),
@@ -881,7 +884,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             has.data_type, 
             substr('YN', (coalesce(guc.unitid,-1) == -1)+1, 1), 
             substr('NY', (has.data_type == 'NEW')+1, 1), 
-            has.facility_name
+            has.facility_name,
+            cuuaf.program_codes
         FROM hourly_activity_summary has
         
       
@@ -904,7 +908,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
         AND cuuaf.ertac_region = has.ertac_region
         AND cuuaf.ertac_fuel_unit_type_bin = has.ertac_fuel_unit_type_bin
         
-        GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""")
+        GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""", [ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year']), ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year'])] + [inputvars['ozone_start_hour'],inputvars['ozone_end_hour']]*16)
  
     if 'include-unit-day' in inputvars:       
         conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, data_type, facility_name)
@@ -1121,6 +1125,8 @@ def write_final_data(conn, inputvars, out_prefix, logfile):
     #add state/regional dump
 
 def create_postprocessing_tables(conn):
+    ertac_lib.run_script_file('create_preprocessor_output_tables.sql', conn)
+    ertac_lib.run_script_file('create_projection_output_tables.sql', conn)
     ertac_lib.run_script_file('create_postprocessing_tables.sql', conn)
 
     # Also need state lookup table, for abbreviation-FIPS code conversion.
@@ -1264,7 +1270,7 @@ def main(argv=None):
     print >> logfile, "Run with arguments" + argument_list
     print >> logfile, "Model code versions:"
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py', 'ertac_reports.py',
-                      'create_postprocessing_tables.sql']:
+                      'create_preprocessor_output_tables.sql', 'create_projection_output_tables.sql', 'create_postprocessing_tables.sql']:
         print >> logfile, "  " + file_name + ": " + time.ctime(os.path.getmtime(os.path.join(sys.path[0], file_name)))
 
     # Workspace SQL DB (1) in memory or (2) as a file
@@ -1333,6 +1339,7 @@ def main(argv=None):
 
     # Need to convert operating date/hour into calendar hour for outputs.
     ertac_lib.make_calendar_hours(inputvars['base_year'], inputvars['future_year'], dbconn)
+    
     (inputvars['ozone_start_hour'],) = dbconn.execute("""SELECT MIN(calendar_hour)
     FROM calendar_hours
     WHERE op_date >= ?""", (ozone_start_base,)).fetchone()
@@ -1340,7 +1347,7 @@ def main(argv=None):
     (inputvars['ozone_end_hour'],) = dbconn.execute("""SELECT MAX(calendar_hour)
     FROM calendar_hours
     WHERE op_date <= ?""", (ozone_end_base,)).fetchone()
-
+    
     #this stretch makes the directory structure necessary for saving results
     if not os.path.exists(output_prefix+'post_results'):
         os.makedirs(output_prefix+'post_results')

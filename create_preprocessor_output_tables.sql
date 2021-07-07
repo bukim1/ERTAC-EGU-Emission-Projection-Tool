@@ -108,6 +108,7 @@ capacity_limited_unit_flag TEXT COLLATE NOCASE,
 modifier_email_address TEXT,
 unit_completeness_check TEXT,
 hours_cap REAL,
+program_codes TEXT,
 heat_rate_lower_limit REAL,
 heat_rate_upper_limit REAL,
 heat_rate_lower_stat REAL,
@@ -300,6 +301,7 @@ new_unit_hierarchy_placement_percentile REAL NOT NULL,
 new_unit_emission_factor_percentile REAL NOT NULL,
 unit_min_optimal_load_threshold_determinant REAL NOT NULL,
 heat_input_calculation_percentile REAL NOT NULL,
+include_hizgs TEXT COLLATE NOCASE,
 PRIMARY KEY (ertac_region, ertac_fuel_unit_type_bin));
 
 -- CALC_CONTROL_EMISSIONS

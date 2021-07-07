@@ -2,7 +2,7 @@
 
 """Utility routines for ERTAC EGU projection"""
 
-VERSION = "2.1"
+VERSION = "2.2"
 # Updated to version 2.0b as of 9/22/2015.
 
 import sys, csv, logging, os, re, datetime
@@ -342,6 +342,8 @@ def is_leap_year(year):
             return False            # common year
 
 
+def hours_in_year(base_year, future_year):
+    return (8784 if (is_leap_year(base_year) and is_leap_year(future_year)) else 8760)
 
 def make_calendar_hours(base_year, future_year, connection):
     """Make lookup table between dates/hours and hour numbers.
@@ -591,7 +593,8 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
         # Check if new unit only operates for part of future year
         future_date = op_date.replace(base_year, future_year)
         if future_date >= unit_online and future_date < unit_offline:
-
+            
+            gload_proxy = None
             # Calculate GLOAD if possible
             if fuel.upper() == 'COAL':
                 # 20120119 Formula was wrong in design document; should be
@@ -600,12 +603,11 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
                 # max_ertac_hi_hourly_summer / ertac_heat_rate * proxy_percentage
                 if unit_max_hi > 0.0 and unit_heat_rate > 0.0 and proxy_percentage > 0.0:
                     gload_proxy = unit_max_hi * 1000.0 / unit_heat_rate * proxy_percentage / 100.0
-                else:
-                    gload_proxy = None
+
             elif new_old_ratio > 0.0:
                 # For new non-coal unit, copy scaled generation from old unit as
                 # proxy load for new unit.
-                (gload,) = connection.execute("""SELECT gload
+                gres = connection.execute("""SELECT gload
                 FROM calc_hourly_base
                 WHERE ertac_region = ?
                 AND ertac_fuel_unit_type_bin = ?
@@ -613,12 +615,13 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
                 AND op_hour = ?
                 AND orispl_code = ?
                 AND unitid = ?""", (region, fuel, op_date, op_hour, old_plant, old_unit)).fetchone()
-                if gload is not None and gload > 0.0:
-                    gload_proxy = gload * new_old_ratio
+                
+                #JMJ 11/27/2020  reworked this logic so that when null results were returned it a warning, also cleaned up the gload_proxy = None logic
+                if gres is not None: 
+                    if gres[0] is not None and gres[0] > 0.0:
+                        gload_proxy = gres[0] * new_old_ratio
                 else:
-                    gload_proxy = None
-            else:
-                gload_proxy = None
+                    print >> logfile, "Something odd occurred with calculation of gload proxy and there is possible corruption in camd_hourly_base for: "+str((region, fuel, op_date, op_hour, old_plant, old_unit))
 
             # Check against gload limits
             if gload_proxy is not None:
