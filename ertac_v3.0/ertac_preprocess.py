@@ -101,7 +101,7 @@ def main(argv=None):
         return 2
 
     debug_level = "INFO"
-    input_prefix = "C2.2CONUSv16.2_2023_"
+    input_prefix = ""
     output_prefix = ""
     suppress_pr_messages = False
 
