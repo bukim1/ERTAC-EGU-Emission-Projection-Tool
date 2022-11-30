@@ -6,8 +6,8 @@
 
 import sys
 
-VERSION = "2.2"
-# Updated to version 2.2 as of May 24, 2021.
+VERSION = "3.0"
+#Updated to v3.0 as of November 2, 2022
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -1315,7 +1315,7 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
 
         # jmj 10/22/2013 apply a percent reduction to the gross load if the proxy generation is higher than the future generation needed
         if total_proxy > 0 and future_gen < total_proxy:
-            gload = gload * future_gen / total_proxy
+            gload = round(gload * future_gen / total_proxy, 12)
 
         if hierarchy_hour > 1:
             # Get previous hour's running totals.
@@ -1351,7 +1351,7 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
         if unit_max_hi is not None and heat_input >= unit_max_hi:
             hourly_hi_limit = 'Y'
             heat_input = unit_max_hi
-            gload = heat_input * 1000.0 / unit_heat_rate
+            gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
         else:
             hourly_hi_limit = 'N'
 
@@ -1360,7 +1360,7 @@ def assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
             if cumulative_hi + heat_input > unit_annual_hi_limit_value:
                 annual_hi_limit = 'Y'
                 heat_input = unit_annual_hi_limit_value - cumulative_hi
-                gload = heat_input * 1000.0 / unit_heat_rate
+                gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
             else:
                 annual_hi_limit = 'N'
         else:
@@ -1513,7 +1513,7 @@ def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
             heat_input = unit_max_hi
             # jmj 6/10/2019 make sure gload isn't recalculated if its a hizg hour
             if hizg_hi is None:
-                gload = heat_input * 1000.0 / unit_heat_rate
+                gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
         else:
             hourly_hi_limit = 'N'
 
@@ -1524,7 +1524,7 @@ def assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_ho
                 heat_input = unit_annual_hi_limit_value - cumulative_hi
                 # jmj 6/10/2019 make sure gload isn't recalculated if its a hizg hour
                 if hizg_hi is None:
-                    gload = heat_input * 1000.0 / unit_heat_rate
+                    gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
             else:
                 annual_hi_limit = 'N'
         else:
@@ -1793,9 +1793,9 @@ def allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_yea
                     heat_input = unit_heat_rate * gload / 1000.0
                     # Hourly optimum?
                     if heat_input > unit_opt_hi:
-                        excess_generation += (heat_input - unit_opt_hi) * 1000.0 / unit_heat_rate
+                        excess_generation += round((heat_input - unit_opt_hi) * 1000.0 / unit_heat_rate, 12)
                         heat_input = unit_opt_hi
-                        gload = heat_input * 1000.0 / unit_heat_rate
+                        gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
                     # Annual limit?
                     if unit_max_hi is not None and unit_max_uf is not None:
                         unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year,
@@ -1803,10 +1803,10 @@ def allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_yea
                         headroom = unit_annual_hi_limit_value - last_hour_cumulative_hi
                         if heat_input > initial_heat_input + headroom:
                             # We used all available capacity through the end of the year.
-                            excess_generation += (heat_input - (
-                                    initial_heat_input + headroom)) * 1000.0 / unit_heat_rate
+                            excess_generation += round((heat_input - (
+                                    initial_heat_input + headroom)) * 1000.0 / unit_heat_rate, 12)
                             heat_input = initial_heat_input + headroom
-                            gload = heat_input * 1000.0 / unit_heat_rate
+                            gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
                             last_hour_annual_hi_limit = 'Y'  # rw fixed typo == vs = found by jj
 
             if gload > 0.0:
@@ -1912,9 +1912,9 @@ def allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_yea
                     heat_input = unit_heat_rate * gload / 1000.0
                     # Hourly limit?
                     if heat_input > unit_max_hi:
-                        excess_generation += (heat_input - unit_max_hi) * 1000.0 / unit_heat_rate
+                        excess_generation += round((heat_input - unit_max_hi) * 1000.0 / unit_heat_rate, 12)
                         heat_input = unit_max_hi
-                        gload = heat_input * 1000.0 / unit_heat_rate
+                        gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
                     # Annual limit?
                     if unit_max_hi is not None and unit_max_uf is not None:
                         unit_annual_hi_limit_value = ertac_lib.hours_in_year(base_year,
@@ -1922,10 +1922,10 @@ def allocate_excess_generation(conn, region, fuel, max_uf, base_year, future_yea
                         headroom = unit_annual_hi_limit_value - last_hour_cumulative_hi
                         if heat_input > initial_heat_input + headroom:
                             # We used all available capacity through the end of the year.
-                            excess_generation += (heat_input - (
-                                    initial_heat_input + headroom)) * 1000.0 / unit_heat_rate
+                            excess_generation += round((heat_input - (
+                                    initial_heat_input + headroom)) * 1000.0 / unit_heat_rate, 12)
                             heat_input = initial_heat_input + headroom
-                            gload = heat_input * 1000.0 / unit_heat_rate
+                            gload = round(heat_input * 1000.0 / unit_heat_rate, 12)
                             last_hour_annual_hi_limit = 'Y'  # rw fixed typo == vs = found by jj
 
                 # Might have raised to hourly limit, but could have backed down for annual limit.
@@ -2095,7 +2095,7 @@ def summarize_unit_activity(conn, base_year, future_year, logfile):
             if max_hi is None:
                 x = 1
             else:
-                gen_cap = 1000.0 * max_hi / heat_rate
+                gen_cap = round(1000.0 * max_hi / heat_rate, 12)
         else:
             gen_cap = None
         (hours_at_max,) = conn.execute("""SELECT COUNT(*)

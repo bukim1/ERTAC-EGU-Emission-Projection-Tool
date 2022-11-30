@@ -4,8 +4,8 @@
 
 """Preprocessing steps for ERTAC EGU projection"""
 
-VERSION = "2.2"
-# Updated to version 2.2 as of May 24, 2021.
+VERSION = "3.0"
+# Updated to version 3.0 as of November 2, 2022
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -20,7 +20,6 @@ except ImportError:
     print("Run python -V to find your Python version.", file=sys.stderr)
     raise
 
-# This section was changed after Jin announced that he had been manually
 # modifying every earlier copy of the model code in order to load SQLite3 into
 # his unexpected older Python installation.
 try:
@@ -82,6 +81,7 @@ Usage: %s [OPTION]...
   -i prefix, --input-prefix=prefix.
   -o prefix, --output-prefix=prefix.
   --suppress_pr   suppress partial year reporter messages.
+  --keep_feb29 do not delete leap year data (need for SMOKE ready runs)
 """) % progname)
 
 
@@ -93,7 +93,7 @@ def main(argv=None):
     try:
         opts, args = getopt.getopt(argv[1:], "hdqvi:o:",
                                    ["help", "debug", "quiet", "verbose", "input-prefix=", "output-prefix=",
-                                    "suppress_pr"])
+                                    "suppress_pr","keep_feb29"])
     except getopt.GetoptError as err:
         print()
         print((str(err)))
@@ -104,6 +104,7 @@ def main(argv=None):
     input_prefix = ""
     output_prefix = ""
     suppress_pr_messages = False
+    remove_feb29 = True
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -123,6 +124,10 @@ def main(argv=None):
         # jmj 11/20/2013 adding suppression of partial year reporter messages
         elif opt in "--suppress_pr":
             suppress_pr_messages = True
+            
+        # jmj 10/19/2022 adding the ability to keep the new year manually for runs needed for smoke processing
+        elif opt in "--keep_feb29":
+            remove_feb29 = False
         else:
             assert False, "unhandled option"
 
@@ -392,7 +397,8 @@ def main(argv=None):
 
     # If base year was a leap year but future year isn't, delete recorded
     # Feb. 29 data before ranking days/hours for hierarchy.
-    if ertac_lib.is_leap_year(base_year) and not ertac_lib.is_leap_year(future_year):
+    # jmj 10/19/2022 adding a flag to allow the leap year to be kept so that projection from leap year can work in SMOKE
+    if remove_feb29 and ertac_lib.is_leap_year(base_year) and not ertac_lib.is_leap_year(future_year):
         logging.info("Deleting February 29 base year hourly data.")
         delete_feb29_data(dbconn, base_year, future_year, logfile)
 
@@ -2104,13 +2110,13 @@ def fill_partial_year(conn, base_year, suppress_pr_messages, logfile):
             # Divide remaining HI evenly among hours, for flat operation.
             # Set hourly GLOAD and emissions as fractions of recorded totals,
             # based on ratio of hourly HI to recorded total.
-            hourly_hi = (annual_hi - heat_total) / active_unrecorded_hours
+            hourly_hi = round((annual_hi - heat_total) / active_unrecorded_hours, 12)
             # jmj add pr message suppression option
             if not suppress_pr_messages:
                 print("    Remainder of Annual_HI_Partials from UAF will be distributed across active hours.",
                       file=logfile)
                 print("    Hourly HI will be", hourly_hi, "with GLOAD and emissions in proportion.", file=logfile)
-            hi_ratio = hourly_hi / heat_total
+            hi_ratio = round(hourly_hi / heat_total, 12)
             hourly_gload = gload_total * hi_ratio if gload_total is not None else None
             hourly_so2 = so2_total * hi_ratio if so2_total is not None else None
             hourly_nox = nox_total * hi_ratio if nox_total is not None else None
@@ -2646,47 +2652,47 @@ def calc_unit_stats(conn, logfile):
             WHERE op_date NOT BETWEEN ? AND ?""", (os_start, os_end)).fetchone()
 
         if ann_gload is not None and ann_gload > 0.0 and ann_hi is not None:
-            ann_heat_rate = 1000.0 * ann_hi / ann_gload
+            ann_heat_rate = round(1000.0 * ann_hi / ann_gload, 12)
         else:
             ann_heat_rate = None
 
         if ann_hi is not None and ann_hi > 0.0 and ann_so2 is not None:
-            ann_so2_rate = ann_so2 / ann_hi
+            ann_so2_rate = round(ann_so2 / ann_hi, 12)
         else:
             ann_so2_rate = None
 
         if ann_hi is not None and ann_hi > 0.0 and ann_nox is not None:
-            ann_nox_rate = ann_nox / ann_hi
+            ann_nox_rate = round(ann_nox / ann_hi, 12)
         else:
             ann_nox_rate = None
 
         if os_gload is not None and os_gload > 0.0 and os_hi is not None:
-            os_heat_rate = 1000.0 * os_hi / os_gload
+            os_heat_rate = round(1000.0 * os_hi / os_gload, 12)
         else:
             os_heat_rate = None
 
         if os_hi is not None and os_hi > 0.0 and os_so2 is not None:
-            os_so2_rate = os_so2 / os_hi
+            os_so2_rate = round(os_so2 / os_hi, 12)
         else:
             os_so2_rate = None
 
         if os_hi is not None and os_hi > 0.0 and os_nox is not None:
-            os_nox_rate = os_nox / os_hi
+            os_nox_rate = round(os_nox / os_hi, 12)
         else:
             os_nox_rate = None
 
         if nonos_gload is not None and nonos_gload > 0.0 and nonos_hi is not None:
-            nonos_heat_rate = 1000.0 * nonos_hi / nonos_gload
+            nonos_heat_rate = round(1000.0 * nonos_hi / nonos_gload, 12)
         else:
             nonos_heat_rate = None
 
         if nonos_hi is not None and nonos_hi > 0.0 and nonos_so2 is not None:
-            nonos_so2_rate = nonos_so2 / nonos_hi
+            nonos_so2_rate = round(nonos_so2 / nonos_hi, 12)
         else:
             nonos_so2_rate = None
 
         if nonos_hi is not None and nonos_hi > 0.0 and nonos_nox is not None:
-            nonos_nox_rate = nonos_nox / nonos_hi
+            nonos_nox_rate = round(nonos_nox / nonos_hi, 12)
         else:
             nonos_nox_rate = None
 
@@ -2801,7 +2807,7 @@ def calculate_heat_rates(conn, future_year, logfile):
             print("  Warning: unit " + ertac_lib.nice_str((plant, unit, fuel))
                   + " has no heat input or gload in hourly data, so can't calculate BY average heat rate", file=logfile)
         else:
-            avg_heat_rate = total_hi * 1000.0 / total_gload
+            avg_heat_rate = round(total_hi * 1000.0 / total_gload, 12)
             conn.execute("""UPDATE calc_updated_uaf
             SET calc_by_average_heat_rate = ?
             WHERE orispl_code = ?
@@ -2996,7 +3002,7 @@ def calculate_utilization_fractions(conn, base_year, future_year, logfile):
                   + " has no heat input in hourly data, so can't calculate utilization fraction", file=logfile)
 
         if total_hi is not None and max_hi is not None and max_hi > 0.0:
-            calculated_uf = total_hi / (max_hi * ertac_lib.hours_in_year(base_year, future_year))
+            calculated_uf = round(total_hi / (max_hi * ertac_lib.hours_in_year(base_year, future_year)), 12)
         else:
             calculated_uf = None
 

@@ -2,9 +2,10 @@
 
 """ERTAC EGU table characteristics"""
 
-VERSION = "2.2"
+VERSION = "3.0"
+#Updated to v3.0 as of November 2, 2021
+
 import sys, os, csv
-# Updated to version 2.0g as of 9/30/2015.
 
 # For structural checking of CSV input data, and to create header rows for CSV
 # output, we use the following groups of column characteristics.  For each

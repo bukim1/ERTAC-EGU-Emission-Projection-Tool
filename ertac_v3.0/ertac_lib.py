@@ -2,8 +2,8 @@
 
 """Utility routines for ERTAC EGU projection"""
 
-VERSION = "2.2"
-# Updated to version 2.0b as of 9/22/2015.
+VERSION = "3.0"
+#Updated to v3.0 as of November 2, 2021
 
 import sys, csv, logging, os, re, datetime
 
@@ -126,25 +126,24 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
     # cross-platform file exchange.
 
     logging.info("  " + csv_file)
-    #print ("", file == logfile)
-    logfile.write("")
+    print ("", file = logfile)
+    
     # Catch IOError on file opening, in case input file is missing or unreadable.
     try:
         #Changed this to just "r" vs "rU"
         cf = open(csv_file, 'r')
     except IOError:
-        #print ("File: " + csv_file + " -- Could not be read.", file == logfile)
-        logfile.write("File: " + csv_file + " -- Could not be read.")
+        print ("File: " + csv_file + " -- Could not be read.", file = logfile)
+        logging.info("File: " + csv_file + " -- Could not be read.")
         #jmj allows checks to see if loading fails or not 150413
         return False
-    #print ("Loading input data from file: " + csv_file, file == logfile)
-    logfile.write("Loading input data from file: " + csv_file)
+    print ("Loading input data from file: " + csv_file, file = logfile)
+    
     cr = csv.reader(cf)
     row_count = 0
     for row in cr:
         if len(row) < column_count:
-            #print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use short row:", row, file == logfile)
-            logfile.write("File: " + csv_file + " line:" + str(cr.line_num) + "-- Can't use short row:")
+            print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use short row:", row, file = logfile)
             continue
 
         # Missing input data from CSV file looks like an empty string; convert
@@ -207,37 +206,28 @@ def load_csv_into_table(prefix, basic_csv_file, table_name, connection, column_t
                 if col.replace(' ', '_').upper() == header_text.replace(' ', '_').upper():
                     header_match += 1
             if header_match:
-                #print ("File: " + csv_file + " line:", cr.line_num, "-- Probable header line not stored in database:", row, file == logfile)
-                logfile.write("File: " + csv_file + " line:" + str(cr.line_num) + "-- Probable header line not stored in database:")
+                print ("File: " + csv_file + " line:", cr.line_num, "-- Probable header line not stored in database:", row, file = logfile)
             else:
-                #print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", file == logfile),
-                logfile.write("File: " + csv_file + " line:" + str(cr.line_num) + "-- Can't use bad input row;"),
-
+                print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", file = logfile),
+                
                 if missing_required:
-                    #print ("missing data in one or more required columns:", missing_required, ";", file == logfile),
-                    logfile.write("missing data in one or more required columns:", missing_required, ";"),
+                    print ("missing data in one or more required columns:", missing_required, ";", file = logfile),
                 if non_number:
-                    #print ("non-numeric data in one or more numeric columns:", non_number, ";", file == logfile),
-                    logfile.write("non-numeric data in one or more numeric columns:", non_number, ";"),
+                    print ("non-numeric data in one or more numeric columns:", non_number, ";", file = logfile),
                 if non_date:
-                    #print ("unusable data in one or more date columns:", non_date, ";", file == logfile),
-                    logfile.write("unusable data in one or more date columns:", non_date, ";"),
-                #print ("-- Row data:", row, file == logfile)
-                logfile.write("-- Row data:", row)
+                    print ("unusable data in one or more date columns:", non_date, ";", file = logfile),
+                print ("-- Row data:", row, file = logfile)
         else:
             # Normal-looking data
             try:
                 connection.execute("INSERT INTO " + table_name + " VALUES " + parameter_list, new_row[:column_count])
                 row_count += 1
             except sqlite3.IntegrityError as err_msg:
-                #print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row, file == logfile)
-                logfile.write("File: " + csv_file + " line: " + str(cr.line_num) + " -- Can't use bad input row; "+ str(err_msg) + " -- Row data: "+ str(row))
+                print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row, file = logfile)
             except sqlite3.ProgrammingError as err_msg:
-                #print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row, file == logfile)
-                logfile.write("File: " + csv_file + " line: " + str(cr.line_num) + " -- Can't use bad input row; "+ str(err_msg) + " -- Row data: "+ str(row))
-
-    #print ("File: " + csv_file + "; read", cr.line_num, "lines, stored", row_count, "data rows in table: " + table_name, file == logfile)
-    logfile.write("File: " + csv_file + "; read " + str(cr.line_num) + " lines, stored " + str(row_count) + " data rows in table: " + str(table_name))
+                print ("File: " + csv_file + " line:", cr.line_num, "-- Can't use bad input row;", err_msg, "-- Row data:", row, file = logfile)
+                
+    print ("File: " + csv_file + "; read", cr.line_num, "lines, stored", row_count, "data rows in table: " + table_name, file = logfile)
     connection.commit()
     #jmj allows checks to see if loading fails or not 150413
     return True
@@ -301,9 +291,8 @@ def log_and_exit(logfile, error_message):
 
     # Make sure fatal errors are written into the log, and displayed on screen
     # even when in -q (quiet) mode.
-    #print (error_message + "  Program will terminate.", file == logfile)
-    logfile.write(error_message + "  Program will terminate.")
-    #print (error_message + "  Program will terminate.", file == sys.stderr)
+    print (error_message + "  Program will terminate.", file = logfile)
+    print (error_message + "  Program will terminate.", file = sys.stderr)
     sys.stderr.write(error_message + "  Program will terminate.")
     sys.exit(1)
 
@@ -321,8 +310,7 @@ def log_warn(logfile, error_message):
     # This routine exists as an alternative to log_and_exit(), so that errors
     # detected during data validation can be treated as more or less severe by
     # calling one or the other error logging function.
-    #print (error_message, file == logfile)
-    logfile.write(error_message)
+    print (error_message, file = logfile)
 
 
 
@@ -457,11 +445,9 @@ def check_data_ranges(table_name, connection, column_types, logfile):
     """
 
     logging.info("  " + table_name)
-    #print ("", file == logfile)
-    logfile.write("")
-    #print ("Checking data ranges for table: " + table_name, file == logfile)
-    logfile.write("Checking data ranges for table: " + table_name)
-
+    print ("", file = logfile)
+    print ("Checking data ranges for table: " + table_name, file = logfile)
+    
     dbcur = connection.execute("SELECT * FROM " + table_name)
     for row in dbcur:
         warnings = []
@@ -481,10 +467,8 @@ def check_data_ranges(table_name, connection, column_types, logfile):
                     if col > allowed[1]:
                         warnings.append(header_text + ' ' + col + ' after maximum value ' + allowed[1])
         if warnings:
-            #print ("Table: " + table_name + " -- Warning:", warnings, "-- Row data:", row, file == logfile)
-            logfile.write("Table: " + table_name + " -- Warning:" + warnings[0] + "-- Row data:" + str(row))
-
-
+            print ("Table: " + table_name + " -- Warning:", warnings, "-- Row data:", row, file = logfile)
+            
 
 def compute_proxy_generation(connection, region, fuel, plant, unit, state, name, base_year, future_year, logfile):
     """Compute proxy generation load for planned or generic new units.
@@ -506,10 +490,8 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
     WHERE ertac_region = ?
     AND ertac_fuel_unit_type_bin = ?""", (region, fuel)).fetchone()
     if input_result is None:
-        #print ("  Warning: no proxy percentage in input variables for region/fuel " \
-        #    + nice_str((region, fuel)) + " so will set to 50%", file == logfile)
-        logfile.write("  Warning: no proxy percentage in input variables for region/fuel " \
-            + nice_str((region, fuel)) + " so will set to 50%")
+        print ("  Warning: no proxy percentage in input variables for region/fuel " \
+            + nice_str((region, fuel)) + " so will set to 50%", file = logfile)
         proxy_percentage = 50.0
     else:
         (proxy_percentage,) = input_result
@@ -524,16 +506,12 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
 
     #You cant compare Nones with floats in Python3+, split this into 2 if statments to fix
     if unit_max_hi is None or unit_heat_rate is None:
-        #print ("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
-        #    + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy", file == logfile)
-        logfile.write("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
-            + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy")
+        print ("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
+            + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy", file = logfile)
     if unit_max_hi == 0.0 or unit_heat_rate == 0.0:
-        #print ("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
-        #    + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy", file == logfile)
-        logfile.write("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
-            + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy")
-
+        print ("  Warning: new unit " + nice_str((region, fuel, plant, unit)) \
+            + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate in UAF, so can't calculate optimal load or gload_proxy", file = logfile)
+        
 
     # Since calc_generation_proxy stores gload values instead of heat input,
     # need to compute hourly and annual limits in terms of gload.
@@ -572,10 +550,8 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
     AND uaf.camd_by_hourly_data_type <> 'NEW'""", (region, fuel, new_unit_order)).fetchone()
 
     if old_unit_order is None:
-        #print ("  Warning: no available existing unit to set optimal load or gload_proxy for new unit " \
-        #    + nice_str((region, fuel, plant, unit)) + " at rank", new_unit_order, file == logfile)
-        logfile.write("  Warning: no available existing unit to set optimal load or gload_proxy for new unit " \
-            + nice_str((region, fuel, plant, unit)) + " at rank", new_unit_order)
+        print ("  Warning: no available existing unit to set optimal load or gload_proxy for new unit " \
+            + nice_str((region, fuel, plant, unit)) + " at rank", new_unit_order, file = logfile)
     else:
         (old_plant, old_unit) = connection.execute("""SELECT orispl_code, unitid
         FROM calc_unit_hierarchy
@@ -592,13 +568,10 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
         AND unitid = ?""", (region, fuel, old_plant, old_unit)).fetchone()
 
         if old_max_heat_input is None or old_max_heat_input == 0.0 or old_heat_rate is None or old_heat_rate == 0.0 or old_optimal_load is None or old_optimal_load == 0.0:
-            #print ("  Warning: old unit " + nice_str((region, fuel, old_plant, old_unit)) \
-            #    + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate or unit_max_optimal_load_threshold in UAF, so can't calculate optimal load or gload_proxy for new unit " \
-            #    + nice_str((region, fuel, plant, unit)), file == logfile)
-            logfile.write("  Warning: old unit " + nice_str((region, fuel, old_plant, old_unit)) \
+            print ("  Warning: old unit " + nice_str((region, fuel, old_plant, old_unit)) \
                 + " has missing max_ertac_hi_hourly_summer or ertac_heat_rate or unit_max_optimal_load_threshold in UAF, so can't calculate optimal load or gload_proxy for new unit " \
-                + nice_str((region, fuel, plant, unit)))
-
+                + nice_str((region, fuel, plant, unit)), file = logfile)
+            
         if unit_max_hi is not None and unit_max_hi > 0.0 and unit_heat_rate is not None and unit_heat_rate > 0.0 and old_max_heat_input is not None and old_max_heat_input > 0.0 and old_heat_rate is not None and old_heat_rate > 0.0:
             new_old_ratio = (unit_max_hi / unit_heat_rate) / (old_max_heat_input / old_heat_rate)
 
@@ -662,9 +635,8 @@ def compute_proxy_generation(connection, region, fuel, plant, unit, state, name,
                     if gres[0] is not None and gres[0] > 0.0:
                         gload_proxy = gres[0] * new_old_ratio
                 else:
-                    #print ( "Something odd occurred with calculation of gload proxy and there is possible corruption in camd_hourly_base for: "+str((region, fuel, op_date, op_hour, old_plant, old_unit)), file == logfile)
-                    logfile.write( "Something odd occurred with calculation of gload proxy and there is possible corruption in camd_hourly_base for: "+str((region, fuel, op_date, op_hour, old_plant, old_unit)))
-
+                    print ( "Something odd occurred with calculation of gload proxy and there is possible corruption in camd_hourly_base for: "+str((region, fuel, op_date, op_hour, old_plant, old_unit)), file = logfile)
+                    
             # Check against gload limits
             if gload_proxy is not None:
                 if hourly_gload_limit is not None and gload_proxy > hourly_gload_limit:
@@ -715,14 +687,12 @@ def export_table_to_csv(table_name, prefix, basic_csv_file, connection, column_t
         cols = dbcur.description
 
     logging.info("  " + csv_file)
-    #print ("", file == logfile)
-    logfile.write("")
+    print ("", file = logfile)
     try:
         #Remove "b" from "wb" to account for python 3 compatibility, also add newline = ''
         cf = open(csv_file, 'w', newline='')
     except IOError:
-        #print ("File: " + csv_file + " -- Could not be written.", file == logfile)
-        logfile.write("File: " + csv_file + " -- Could not be written.")
+        print ("File: " + csv_file + " -- Could not be written.", file = logfile)
         return
 
     cw = csv.writer(cf)
@@ -734,5 +704,5 @@ def export_table_to_csv(table_name, prefix, basic_csv_file, connection, column_t
         cw.writerow(row)
         row_count += 1
 
-    #print ("Wrote out", row_count, "data rows from table: " + table_name + " to file: " + csv_file, file == logfile)
-    logfile.write("Wrote out" + str(row_count) + "data rows from table: " + table_name + " to file: " + csv_file)
+    print ("Wrote out", row_count, "data rows from table: " + table_name + " to file: " + csv_file, file = logfile)
+    

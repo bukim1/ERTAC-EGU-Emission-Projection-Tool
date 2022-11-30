@@ -8,8 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.2"
-# Updated to v2.2 as of May 24, 2021
+VERSION = "3.0"
+# Updated to v3.0 as of October 26, 2022
 
 import sys
 
@@ -220,6 +220,8 @@ Usage: %s [OPTION]...
   --include-st-hr                       run the state level hourly summary
   --include-rg-hr                       run the regional level hourly summary
   --include-unit-day                    run the unit level daily summary
+  --remove-feb29                        remove feb29 data during non-leap years
+
   --config-file=existing csv.           use csv to override all inputs except sql-database (only accepts double dashed, without the double dashes, e.g. input-prefix-proj)
   --state=state.                        limit analysis to this state
   --region=region.                      limit analysis to this ertac region
@@ -320,6 +322,12 @@ def summarize_hourly_results(conn, inputvars, logfile):
 
     # we are going to divy everything up by state/fuel bin to ease the burden of lots of calls to huge dbs
     (where, inputs) = build_where(conn, 'calc_updated_uaf.', inputvars, False, True)
+    
+    #jmj 10/27/2022 remove feb29 if is not needed for review purposes
+    if 'remove-feb29' in inputvars:
+        (hour_count, ) = conn.execute("select count(distinct(calendar_hour)) as count from calendar_hierarchy_hours").fetchone()
+        if(hour_count == 8784):
+            where = where + " and calendar_hour <= 1416 and calendar_hour > 1440"
     query = """SELECT state, ertac_fuel_unit_type_bin FROM calc_updated_uaf WHERE 1 """ + where + """ GROUP BY state, ertac_fuel_unit_type_bin"""
 
     for (state, fuel_unit_type_bin) in conn.execute(query, inputs).fetchall():
@@ -1199,7 +1207,7 @@ def main(argv=None):
         opts, args = getopt.getopt(argv[1:], "hdqv:o:",
                                    ["help", "debug", "quiet", "verbose", "run-integrity",
                                     "input-prefix-pre=", "input-prefix-proj=", "output-prefix=", "state=", "region=",
-                                    "fuel-bin=", "orisid=", "time-span=", "include-st-hr", "include-rg-hr",
+                                    "fuel-bin=", "orisid=", "time-span=", "include-st-hr", "include-rg-hr", "remove-feb29",
                                     "include-unit-day", "sql-database=", "config-file="])
     except getopt.GetoptError as err:
         print()
@@ -1275,6 +1283,8 @@ def main(argv=None):
             inputvars['include-rg-hr'] = True
         elif opt in ("--include-unit-day"):
             inputvars['include-unit-day'] = True
+        elif opt in ("--remove-feb29"):
+            inputvars['remove-feb29'] = True
         else:
             assert False, "unhandled option"
 

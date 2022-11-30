@@ -8,7 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "2.2"
+VERSION = "3.0"
+#Updated to v3.0 as of November 2, 2021
 
 import sys
 try:
