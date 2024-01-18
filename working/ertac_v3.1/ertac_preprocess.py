@@ -4,8 +4,8 @@
 
 """Preprocessing steps for ERTAC EGU projection"""
 
-VERSION = "3.0"
-# Updated to version 3.0 as of November 2, 2022
+VERSION = "3.1"
+# Updated to version 3.1 as of January 18, 2024
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -564,8 +564,14 @@ def load_initial_data(conn, in_prefix, logfile):
     # For V2, partially reverted to allow either or both hourly files missing,
     # so basic QA of other inputs by preprocessor can still be done without a
     # fatal error if these are absent.
+
+    #JMJ 1/18/2024 Load the CAMD Hourly Base files in the 2022 format too
+    ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base_2022.csv', 'camd_hourly_base_2022', conn,
+                                  ertac_tables.camd_2022_columns, logfile)
+
     ertac_lib.load_csv_into_table(in_prefix, 'camd_hourly_base.csv', 'camd_hourly_base', conn,
                                   ertac_tables.camd_columns, logfile)
+
     ertac_lib.load_csv_into_table(in_prefix, 'ertac_hourly_noncamd.csv', 'ertac_hourly_noncamd', conn,
                                   ertac_tables.camd_columns, logfile)
 
@@ -1537,6 +1543,12 @@ def remove_non_egu_data(conn, logfile):
         WHERE orispl_code = ? AND unitid = ?""", (plant, unit)).rowcount
     print("Removed", rows_affected, "hourly rows from CAMD data.", file=logfile)
 
+    #JMJ 1/18/2024 We now will remove non-egu data from the non-camd file as well.
+    rows_affected = 0
+    for (plant, unit) in oris_unit_list:
+        rows_affected += conn.execute("""DELETE FROM ertac_hourly_noncamd
+        WHERE orispl_code = ? AND unitid = ?""", (plant, unit)).rowcount
+    print("Removed", rows_affected, "hourly rows from Non-CAMD data.", file=logfile)
 
 def check_initial_data_ranges(conn, logfile):
     """1.02, 1.03: Check value ranges for input database tables.
@@ -1612,6 +1624,7 @@ def copy_base_year_hourly(conn, base_year, logfile):
     # RW 9/25/2015 Doris got confirmation that heat input has already been converted
     # from rate (mmbtu/hr) to input amount (mmbtu) during the hour and doesn't need
     # further adjustment for fractional hours.
+    # JMJ 1/18/2024 load both CAMD hourly base in the original and 2022 format
     conn.execute("DELETE FROM calc_hourly_base")
     rows_affected = conn.execute("""INSERT INTO calc_hourly_base
         (ertac_region,
@@ -1662,7 +1675,9 @@ def copy_base_year_hourly(conn, base_year, logfile):
         hourly.co2_rate_flag,
         hourly.heat_input
     FROM calc_updated_uaf uaf
-    JOIN camd_hourly_base hourly
+    JOIN (SELECT * FROM camd_hourly_base 
+        UNION SELECT state, facility_name, orispl_code, unitid, op_date, op_hour, op_time, gload, sload, so2_mass, so2_mass_flag, so2_rate, so2_rate_flag, nox_rate, nox_rate_flag, nox_mass, nox_mass_flag, co2_mass, co2_mass_flag, co2_rate, co2_rate_flag, heat_input FROM camd_hourly_base_2022)
+        AS hourly
     ON uaf.orispl_code = hourly.orispl_code
     AND uaf.unitid = hourly.unitid
     AND uaf.online_start_date <= hourly.op_date

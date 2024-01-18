@@ -46,6 +46,41 @@ co2_rate_flag TEXT,
 heat_input REAL,
 PRIMARY KEY (orispl_code, unitid, op_date, op_hour));
 
+DROP TABLE IF EXISTS camd_hourly_base_2022;
+CREATE TABLE camd_hourly_base_2022
+(state TEXT NOT NULL COLLATE NOCASE,
+facility_name TEXT NOT NULL COLLATE NOCASE,
+orispl_code TEXT NOT NULL COLLATE NOCASE,
+unitid TEXT NOT NULL COLLATE NOCASE,
+op_date TEXT NOT NULL,
+op_hour INTEGER NOT NULL,
+op_time REAL,
+gload REAL,
+sload REAL,
+so2_mass REAL,
+so2_mass_flag TEXT,
+so2_rate REAL,
+so2_rate_flag TEXT,
+nox_rate REAL,
+nox_rate_flag TEXT,
+nox_mass REAL,
+nox_mass_flag TEXT,
+co2_mass REAL,
+co2_mass_flag TEXT,
+co2_rate REAL,
+co2_rate_flag TEXT,
+heat_input REAL,
+heat_input_flag	TEXT,
+primary_fuel_type TEXT,
+secondary_fuel_type TEXT,
+unit_type TEXT,
+so2_controls TEXT,
+nox_controls TEXT,
+pm_controls TEXT,
+hg_controls	TEXT,
+program_code TEXT
+PRIMARY KEY (orispl_code, unitid, op_date, op_hour));
+
 -- ERTAC_HOURLY_NONCAMD, p.30, same format as CAMD_HOURLY_BASE
 DROP TABLE IF EXISTS ertac_hourly_noncamd;
 CREATE TABLE ertac_hourly_noncamd

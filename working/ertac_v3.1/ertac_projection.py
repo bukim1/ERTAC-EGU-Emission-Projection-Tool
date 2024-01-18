@@ -6,8 +6,8 @@
 
 import sys
 
-VERSION = "3.0"
-#Updated to v3.0 as of November 2, 2022
+VERSION = "3.1"
+#Updated to v3.1 as of January 18, 2024
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -2612,16 +2612,27 @@ def summarize_future_capacity(conn, logfile):
     WHERE max_deficit > 0.0;""")
 
     # jmj 6/2/2017 add a check to make sure growth rates were honored
+    #JMJ 1/18/2024 adding an edit to the check for no growth in the base year
     for (region, unit_type, calc_growth_rate, growth_rate) in conn.execute(
-            "SELECT cfd.ertac_region, cfd.ertac_fuel_unit_type_bin, (COALESCE(fy_gen_including_transfers,0)-COALESCE(fy_transfers,0))/by_gen,COALESCE(annual_growth_factor,0) FROM capacity_and_fy_demand cfd join calc_growth_rates cgr on cfd.ertac_region = cgr.ertac_region and cfd.ertac_fuel_unit_type_bin = cgr.ertac_fuel_unit_type_bin").fetchall():
-        if round(calc_growth_rate, 12) != round(growth_rate, 12):
+            """SELECT cfd.ertac_region, cfd.ertac_fuel_unit_type_bin, CASE WHEN by_gen = 0 THEN NULL ELSE (COALESCE(fy_gen_including_transfers,0)-COALESCE(fy_transfers,0))/by_gen END,COALESCE(annual_growth_factor,0) 
+                FROM capacity_and_fy_demand cfd 
+                JOIN calc_growth_rates cgr 
+                ON cfd.ertac_region = cgr.ertac_region 
+                AND cfd.ertac_fuel_unit_type_bin = cgr.ertac_fuel_unit_type_bin""").fetchall():
+        if calc_growth_rate is None:
             logging.info(
-                "Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(
-                    round(calc_growth_rate, 12)) + ", input variable annual growth rate: " + str(
-                    round(growth_rate, 12)))
+                "Warning: annual growth rate could not be calculated since BY Gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type)
             print(
-                "Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(
-                    calc_growth_rate) + ", input variable annual growth rate: " + str(growth_rate), file=logfile)
+                "Warning: annual growth rate could not be calculated since BY Gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type, file=logfile)
+        else:
+            if round(calc_growth_rate, 12) != round(growth_rate, 12):
+                logging.info(
+                    "Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(
+                        round(calc_growth_rate, 12)) + ", input variable annual growth rate: " + str(
+                        round(growth_rate, 12)))
+                print(
+                    "Warning: annual growth rate was not honored for region: " + region + ", fuel/unit type bin: " + unit_type + ", allocated annual growth rate: " + str(
+                        calc_growth_rate) + ", input variable annual growth rate: " + str(growth_rate), file=logfile)
 
 
 def write_final_data(conn, out_prefix, logfile):

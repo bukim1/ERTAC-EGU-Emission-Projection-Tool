@@ -8,8 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "3.0"
-# Updated to v3.0 as of October 26, 2022
+VERSION = "3.1"
+# Updated to v3.1 as of January 18, 2024
 
 import sys
 
@@ -76,6 +76,8 @@ hourly_activity_summary_columns = (('ertac region', 'str', True, None),
                                    ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
                                    ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
                                    ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                                   ('BY co2 mass (Tons)', 'float', False, None), #JMJ 1/18/2024 adding CO2 to post process
+                                   ('FY co2 mass (Tons)', 'float', False, None),
                                    ('hour specific growth rate', 'float', False, None),
                                    ('afygr', 'float', False, None),
                                    ('data type', 'str', False, None),
@@ -96,6 +98,8 @@ daily_unit_activity_summary_columns = (('ertac region', 'str', True, None),
                                        ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
                                        ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
                                        ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                                       ('BY co2 mass (Tons)', 'float', False, None), # JMJ 1/18/2024 adding CO2 to post process
+                                       ('FY co2 mass (Tons)', 'float', False, None),
                                        ('data type', 'str', False, None),
                                        ('facility name', 'str', False, None))
 
@@ -111,6 +115,8 @@ hourly_regional_summary_columns = (('ertac region', 'str', True, None),
                                    ('FY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
                                    ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
                                    ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
+                                   ('BY co2 mass (Tons)', 'float', False, None), # JMJ 1/18/2024 adding CO2 to post process
+                                   ('FY co2 mass (Tons)', 'float', False, None),
                                    ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
                                    ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
                                    ('hour specific growth rate', 'float', False, None),
@@ -126,7 +132,9 @@ hourly_state_summary_columns = (('state', 'str', True, state_set),
                                 ('BY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
                                 ('FY so2 mass (Tons)', 'float', False, (0.0, 100000.0)),
                                 ('BY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
-                                ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)))
+                                ('FY nox mass (Tons)', 'float', False, (0.0, 20000.0)),
+                                ('BY co2 mass (Tons)', 'float', False, None), # JMJ 1/18/2024 adding CO2 to post process
+                                ('FY co2 mass (Tons)', 'float', False, None))
 
 annual_summary_columns = (('oris', 'str', True, None),
                           ('unit id', 'str', True, None),
@@ -156,8 +164,11 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('BY OS heat input (mmbtu)', 'float', False, None),
                           ('BY OS generation (MW-hrs)', 'float', False, None),
+                          ('BY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('BY NonOS NOx (tons)', 'float', False, None),
                           ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('BY Annual CO2 (tons)', 'float', False, None),
+                          ('BY Average Annual CO2 Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY Annual SO2 (tons)', 'float', False, None),
                           ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
@@ -168,8 +179,11 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY OS heat input (mmbtu)', 'float', False, None),
                           ('FY OS generation (MW-hrs)', 'float', False, None),
+                          ('FY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('FY NonOS NOx (tons)', 'float', False, None),
                           ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY Annual CO2 (tons)', 'float', False, None),
+                          ('FY Average Annual CO2 Rate (lbs/mmbtu)', 'float', False, None),
                           ('Hierarchy Order', 'int', False, None),
                           ('Longitude', 'float', False, None),
                           ('Latitude', 'float', False, None),
@@ -352,6 +366,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
+               chb.co2_mass,
+               hdf.co2_mass,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                upper(cuuaf.camd_by_hourly_data_type),
@@ -391,7 +407,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
         (where, inputs) = build_where(conn, 'hdf.', inputvars, True, True)
 
         # Full and Partial Reporters
-        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
                hdf.ertac_fuel_unit_type_bin,
                hdf.ertac_fuel_unit_type_bin,
@@ -410,6 +426,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
+               chb.co2_mass,
+               hdf.co2_mass,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                upper(cuuaf.camd_by_hourly_data_type),
@@ -476,6 +494,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
+               chb.co2_mass,
+               hdf.co2_mass,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                'SWITCH',
@@ -523,7 +543,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
 
         #
         # Switchers
-        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
                hdf.ertac_fuel_unit_type_bin,
                cuuaf.ertac_fuel_unit_type_bin,
@@ -542,6 +562,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                chb.nox_mass/2000,
                hdf.nox_mass/2000,
+               chb.co2_mass,
+               hdf.co2_mass,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                'SWITCH',
@@ -588,7 +610,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
                                      str(inputvars['future_year']) + '-01-01'] + inputs)
 
         # Switchers
-        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+        query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
         SELECT hdf.ertac_region,
                hdf.ertac_fuel_unit_type_bin,
                cuuaf.ertac_fuel_unit_type_bin,
@@ -607,6 +629,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
                hdf.so2_mass/2000,
                0,
                hdf.nox_mass/2000,
+               0,
+               hdf.co2_mass,
                cgp.hour_specific_growth_rate,
                cgp.afygr,
                'SWITCH',
@@ -685,7 +709,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             cuuaf.unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
 
             if switch_count == 0:
-                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
                 SELECT hdf.ertac_region,
                        hdf.ertac_fuel_unit_type_bin,
                        hdf.ertac_fuel_unit_type_bin,
@@ -700,10 +724,12 @@ def summarize_hourly_results(conn, inputvars, logfile):
                        hdf.gload,
                        0,
                        hdf.heat_input,
-                       0/2000,
+                       0,
                        hdf.so2_mass/2000,
-                       0/2000,
+                       0,
                        hdf.nox_mass/2000,
+                       0,
+                       hdf.co2_mass,
                        cgp.hour_specific_growth_rate,
                        cgp.afygr,
                        'NEW',
@@ -751,7 +777,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             unitid = ?""", [orisid, region, fuel_bin, unitid]).fetchone()
 
             if switch_count == 0:
-                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
+                query = """INSERT INTO hourly_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_hour, hierarchy_hour, by_hierarchy_hour, hourly_hi_limit, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr, data_type, facility_name)
                 SELECT cuuaf.ertac_region,
                        cuuaf.ertac_fuel_unit_type_bin,
                        cuuaf.ertac_fuel_unit_type_bin,
@@ -769,7 +795,9 @@ def summarize_hourly_results(conn, inputvars, logfile):
                        chb.so2_mass/2000,
                        0/2000,
                        chb.nox_mass/2000,
-                       0/2000,
+                       0/2000,                       
+                       chb.co2_mass,
+                       0,
                        NULL,
                        NULL,
                        'RETIRED',
@@ -849,8 +877,12 @@ def summarize_hourly_results(conn, inputvars, logfile):
             fy_os_nox_rate, 
             by_non_os_nox_rate, 
             fy_non_os_nox_rate,
+            by_os_nox_active_day,
+            fy_os_nox_active_day,
             fy_so2_max,
             fy_nox_max,
+            by_co2_mass, 
+            fy_co2_mass, 
             data_type,
             gdu_flag,
             new_unit_flag, 
@@ -903,8 +935,14 @@ def summarize_hourly_results(conn, inputvars, logfile):
             2000*sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
             2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
     
+            2000*sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            2000*sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
+            
             max(COALESCE(fy_so2_mass,0)),
             max(COALESCE(fy_nox_mass,0)),
+            
+            sum(COALESCE(by_co2_mass,0)), 
+            sum(COALESCE(fy_co2_mass,0)),
             
             has.data_type, 
             substr('YN', (coalesce(guc.unitid,-1) == -1)+1, 1), 
@@ -936,10 +974,10 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""",
                  [ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year']),
                   ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year'])] + [
-                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 16)
+                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 20)
 
     if 'include-unit-day' in inputvars:
-        conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, data_type, facility_name)
+        conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
         SELECT 
         ertac_region, 
         ertac_fuel_unit_type_bin, 
@@ -956,6 +994,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
         sum(COALESCE(fy_so2_mass,0)), 
         sum(COALESCE(by_nox_mass,0)), 
         sum(COALESCE(fy_nox_mass,0)), 
+        sum(COALESCE(by_co2_mass,0)), 
+        sum(COALESCE(fy_co2_mass,0)),
         data_type,
         facility_name
     
@@ -966,15 +1006,15 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""")
 
     if 'include-rg-hr' in inputvars:
-        conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr)
-        SELECT ertac_region, fuel_bin, data_type, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
+        conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr)
+        SELECT ertac_region, fuel_bin, data_type, calendar_hour, hierarchy_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(op_max), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), sum(COALESCE(by_co2_mass,0)), sum(COALESCE(fy_co2_mass,0)), MAX(hour_specific_growth_rate), MAX(afygr)    
     
         FROM
-        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, 0 as op_max, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, hour_specific_growth_rate as hour_specific_growth_rate, afygr as afygr
+        (SELECT ertac_region, by_ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, 0 as op_max, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, by_co2_mass, 0 as fy_co2_mass, hour_specific_growth_rate as hour_specific_growth_rate, afygr as afygr
         FROM hourly_activity_summary 
         WHERE by_hierarchy_hour IS NOT NULL
         UNION ALL
-        SELECT has.ertac_region, has.ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, (hourly_hi_limit='Y') as op_max, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, hour_specific_growth_rate, afygr
+        SELECT has.ertac_region, has.ertac_fuel_unit_type_bin as fuel_bin, data_type, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, (hourly_hi_limit='Y') as op_max, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, 0 as by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr
         FROM hourly_activity_summary has
 
         JOIN calc_updated_uaf cuuaf
@@ -987,16 +1027,16 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY ertac_region,  fuel_bin, data_type, calendar_hour, hierarchy_hour""")
 
     if 'include-st-hr' in inputvars:
-        conn.execute("""INSERT INTO hourly_state_activity_summary(state, ertac_fuel_unit_type_bin, calendar_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass)
-        SELECT state, fuel_bin, calendar_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0))    
+        conn.execute("""INSERT INTO hourly_state_activity_summary(state, ertac_fuel_unit_type_bin, calendar_hour, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass)
+        SELECT state, fuel_bin, calendar_hour, sum(COALESCE(by_gload,0)), sum(COALESCE(fy_gload,0)), sum(COALESCE(by_heat_input,0)), sum(COALESCE(fy_heat_input,0)), sum(COALESCE(by_so2_mass,0)), sum(COALESCE(fy_so2_mass,0)), sum(COALESCE(by_nox_mass,0)), sum(COALESCE(fy_nox_mass,0)), sum(COALESCE(by_co2_mass,0)), sum(COALESCE(fy_co2_mass,0))    
         FROM
-        (SELECT state, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass
+        (SELECT state, by_ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, by_hierarchy_hour as hierarchy_hour, by_gload, 0 as fy_gload, by_heat_input, 0 as fy_heat_input, by_so2_mass, 0 as fy_so2_mass, by_nox_mass, 0 as fy_nox_mass, by_co2_mass, 0 as fy_co2_mass
         FROM hourly_activity_summary
         WHERE by_hierarchy_hour IS NOT NULL
         UNION ALL
-        SELECT state, ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass
+        SELECT state, ertac_fuel_unit_type_bin as fuel_bin, calendar_hour, hierarchy_hour, 0 as by_gload, fy_gload, 0 as by_heat_input, fy_heat_input, 0 as by_so2_mass, fy_so2_mass, 0 as by_nox_mass, fy_nox_mass, by_co2_mass, 0 as fy_co2_mass
         FROM hourly_activity_summary
-        WHERE hierarchy_hour IS NOT NULL) 
+            WHERE hierarchy_hour IS NOT NULL) 
         GROUP BY state,  fuel_bin, calendar_hour""")
 
     # remove the calendar hierarchy tables

@@ -2,10 +2,11 @@
 
 """ERTAC EGU table characteristics"""
 
-VERSION = "3.0"
-#Updated to v3.0 as of November 2, 2021
+VERSION = "3.1"
+#Updated to v3.1 as of January 18, 2024
 
 import sys, os, csv
+from datetime import datetime
 
 # For structural checking of CSV input data, and to create header rows for CSV
 # output, we use the following groups of column characteristics.  For each
@@ -24,8 +25,9 @@ import sys, os, csv
 # from the range checks.
 
 # RW 9/30/2015 Updated earliest and latest allowed base year and future year.
-base_year_range = ('2007', '2020')
-future_year_range = ('2007', '2050')
+# JMJ 1/18/2024 Change the end of the range to next year for base year and next year +30 for future years
+base_year_range = ('2007', str(datetime.now().year+1))
+future_year_range = ('2007', str(datetime.now().year+31))
 
 #jmj 9/17/2017 now allows for the state set to be read in just in case you want to run this in canada or something
 default_state_set = set(['AK', 'AL', 'AR', 'AS', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE',
@@ -103,6 +105,18 @@ camd_columns = (('state', 'str', True, state_set),
                 ('co2_rate (tons/mmBtu)', 'float', False, None),
                 ('co2_rate_measure_flg', 'str', False, None),
                 ('heat_input (mmBtu)', 'float', False, (0.0, 29000.0)))
+
+camd_2022_columns = camd_columns + (
+                ('heat_input_measure_flg', 'str', False, None),
+                ('primary_fuel_type', 'str', False, None),
+                ('secondary_or_substitute_fuel', 'str', False, None),
+                ('camd_unit_type', 'str', False, None),
+                ('so2_controls', 'str', False, None),
+                ('nox_controls', 'str', False, None),
+                ('pm_controls', 'str', False, None),
+                ('hg_controls', 'str', False, None),
+                ('program_code', 'str', False, None)
+)
 
 # Need this copy of CAMD hourly structure with region and fuel bin
 # added, for passing from first to second phase of model.
@@ -282,7 +296,7 @@ input_variable_columns_v1 = (('ERTAC Region', 'str', True, None),
                           ('Facility #9', 'str', False, None),
                           ('Facility #10', 'str', False, None),
                           ('Maximum annual ERTAC UF', 'float', True, (0.0, 1.0)),
-                          ('Capacity Demand Deficit Review', 'int', True, (100, 1000)),
+                          ('Capacity Demand Deficit Review', 'int', True, (100, 8784)), #JMJ changed max to 8784 since it was causing problems
                           ('Unit Optimal Load Threshold Determinant', 'float', True, (0.0, 100.0)),
                           ('Proxy % (for coal only)', 'float', True, (20.0, 90.0)),
                           ('Generic SO2 control efficiency', 'float', True, (0.0, 100.0)),

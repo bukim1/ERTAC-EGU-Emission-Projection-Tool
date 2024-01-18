@@ -8,8 +8,8 @@
 # running an unsupported version of Python, or there is no SQLite3 module
 # available, or the ERTAC EGU code isn't all present in the code directory.
 
-VERSION = "3.0"
-#Updated to v3.0 as of November 2, 2021
+VERSION = "3.1"
+#Updated to v3.1 as of January 18, 2024
 
 import sys
 try:
@@ -375,55 +375,59 @@ additional_control_emission_columns = (('ORISPL_CODE', 'str', True, None),
                             ('Submitter email', 'str', False, None))
 
 annual_summary_columns = (('oris', 'str', True, None),
-                       ('unit id', 'str', True, None),
-                       ('Facility Name', 'str', False, None),
-                       ('State', 'str', True, ertac_tables.state_set),
-                       ('FIPS Code', 'str', False, None),
-                       ('ertac region', 'str', True, None),
-                       ('ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
-                       ('BY ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
-                       ('max unit heat input (mmBtu)', 'float', False, None),
-                       ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
-                       ('Generation Capacity (MW)', 'float', False, None),
-                       ('Nameplate Capacity (MW)', 'float', False, None),
-                       ('Number of FY Hours Operating', 'int', True, (0, 8784)),
-                       ('Number of FY Hours Operating at Max', 'int', True, (0, 8784)),
-                       ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
-                       ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
-                       ('Base year generation (MW-hrs)', 'float', False, None),
-                       ('Base year heat input (mmbtu)', 'float', False, None),
-                       ('Future year generation (MW-hrs)', 'float', False, None),
-                       ('Future year heat input (mmbtu)', 'float', False, None),
-                       ('BY Annual SO2 (tons)', 'float', False, None),
-                       ('BY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
-                       ('BY Annual NOx (tons)', 'float', False, None),
-                       ('BY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('BY OS NOx (tons)', 'float', False, None),
-                       ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('BY OS heat input (mmbtu)', 'float', False, None),
-                       ('BY OS generation (MW-hrs)', 'float', False, None),
-                       ('BY NonOS NOx (tons)', 'float', False, None),
-                       ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('FY Annual SO2 (tons)', 'float', False, None),
-                       ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
-                       ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
-                       ('FY Annual NOx (tons)', 'float', False, None),
-                       ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('FY Hourly NOx Mass Max (tons)', 'float', False, None),
-                       ('FY OS NOx (tons)', 'float', False, None),
-                       ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('FY OS heat input (mmbtu)', 'float', False, None),
-                       ('FY OS generation (MW-hrs)', 'float', False, None),
-                       ('FY NonOS NOx (tons)', 'float', False, None),
-                       ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
-                       ('Hierarchy Order', 'int', False, None),
-                       ('Longitude', 'float', False, None),
-                       ('Latitude', 'float', False, None),
-                       ('Generation Deficit Unit?', 'str', False, ['Y','N']),
-                       ('Retirement Date', 'str', False, None),
-                       ('New Unit?', 'str', False, ['Y','N']),
-                       ('data type', 'str', False, None),
-                       ('program_codes', 'str', False, None))
+                          ('unit id', 'str', True, None),
+                          ('Facility Name', 'str', False, None),
+                          ('State', 'str', True, state_set),
+                          ('FIPS Code', 'str', False, None),
+                          ('ertac region', 'str', True, None),
+                          ('ertac fuel unit type bin', 'str', True, fuel_set),
+                          ('BY ertac fuel unit type bin', 'str', True, fuel_set),
+                          ('max unit heat input (mmBtu)', 'float', False, None),
+                          ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
+                          ('Generation Capacity (MW)', 'float', False, None),
+                          ('Nameplate Capacity (MW)', 'float', False, None),
+                          ('Number of FY Hours Operating', 'int', True, (0, 8784)),
+                          ('Number of FY Hours Operating at Max', 'int', True, (0, 8784)),
+                          ('BY Utilization fraction', 'float', False, (0.0, 1.0)),
+                          ('FY Utilization fraction', 'float', False, (0.0, 1.0)),
+                          ('Base year generation (MW-hrs)', 'float', False, None),
+                          ('Base year heat input (mmbtu)', 'float', False, None),
+                          ('Future year generation (MW-hrs)', 'float', False, None),
+                          ('Future year heat input (mmbtu)', 'float', False, None),
+                          ('BY Annual SO2 (tons)', 'float', False, None),
+                          ('BY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                          ('BY Annual NOx (tons)', 'float', False, None),
+                          ('BY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('BY OS NOx (tons)', 'float', False, None),
+                          ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('BY OS heat input (mmbtu)', 'float', False, None),
+                          ('BY OS generation (MW-hrs)', 'float', False, None),
+                          ('BY NonOS NOx (tons)', 'float', False, None),
+                          ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('BY Annual CO2 (tons)', 'float', False, None),
+                          ('BY Average Annual CO2 Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY Annual SO2 (tons)', 'float', False, None),
+                          ('FY Average Annual SO2 Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY Hourly SO2 Mass Max (tons)', 'float', False, None),
+                          ('FY Annual NOx (tons)', 'float', False, None),
+                          ('FY Average Annual NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY Hourly NOx Mass Max (tons)', 'float', False, None),
+                          ('FY OS NOx (tons)', 'float', False, None),
+                          ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY OS heat input (mmbtu)', 'float', False, None),
+                          ('FY OS generation (MW-hrs)', 'float', False, None),
+                          ('FY NonOS NOx (tons)', 'float', False, None),
+                          ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
+                          ('FY Annual CO2 (tons)', 'float', False, None),
+                          ('FY Average Annual CO2 Rate (lbs/mmbtu)', 'float', False, None),
+                          ('Hierarchy Order', 'int', False, None),
+                          ('Longitude', 'float', False, None),
+                          ('Latitude', 'float', False, None),
+                          ('Generation Deficit Unit?', 'str', False, ['Y', 'N']),
+                          ('Retirement Date', 'str', False, None),
+                          ('New Unit?', 'str', False, ['Y', 'N']),
+                          ('data type', 'str', False, None),
+                          ('program_codes', 'str', False, None))
 
 annual_summary_with_other_pollutants_columns = annual_summary_columns + (
                        ('FY Annual PM2.5 (tons)', 'float', False, None),
@@ -988,9 +992,10 @@ def process_results(conn, inputvars, logfile):
                         ms = inputvars['future_year']+"-"+m+"-01"
                         me = inputvars['future_year']+"-"+m+"-"+str(calendar.monthrange(int(inputvars['base_year']),    inputvars['month'])[1])
 
+                        #JMJ 1/18/24 fixed comments to only replace … and " with nothing
                         if ff10_count == 0:
                             conn.execute("""INSERT INTO ff10_future(country, fips, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, cas, """+month_names[inputvars['month']-1]+"""_value, plant, erprtype, stkhgt, stkdiam, stktemp, stkflow, stkvel, naics, lon, lat, ll_datum, srctype, orispl_code, unitid, ipm_yn, calc_year, date_updated, design_capacity, design_capacity_units, facil_category_code, comment)
-                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, 1000 * max_ertac_hi_hourly_summer / ertac_heat_rate,'MW', cuuaf.ertac_fuel_unit_type_bin,  eauaf.comments
+                                        SELECT 'US', fips_code, plantid, pointid, stackid, segment, agy_plantid, agy_pointid, agy_stackid, agy_segment, scc, ?, ?, facility_name, '02', stkhgt, stkdiam,stktemp,stkflow, stkvel,naics, plant_longitude, plant_latitude, '001', '01', cuuaf.orispl_code, cuuaf.unitid, 'N', ?, ?, 1000 * max_ertac_hi_hourly_summer / ertac_heat_rate,'MW', cuuaf.ertac_fuel_unit_type_bin,  replace('…','', replace('"','', eauaf.comments))
                                         FROM calc_updated_uaf cuuaf
                                         LEFT JOIN ertac_pusp_info_file eauaf
                                         
