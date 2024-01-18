@@ -877,8 +877,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
             fy_os_nox_rate, 
             by_non_os_nox_rate, 
             fy_non_os_nox_rate,
-            by_os_nox_active_day,
-            fy_os_nox_active_day,
             fy_so2_max,
             fy_nox_max,
             by_co2_mass, 
@@ -935,9 +933,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
             2000*sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
             2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
     
-            2000*sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            2000*sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            
             max(COALESCE(fy_so2_mass,0)),
             max(COALESCE(fy_nox_mass,0)),
             
@@ -974,7 +969,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
         GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""",
                  [ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year']),
                   ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year'])] + [
-                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 20)
+                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 16)
 
     if 'include-unit-day' in inputvars:
         conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
@@ -1360,13 +1355,13 @@ def main(argv=None):
     logging.info("Program started at " + time.asctime())
     logging.info("ERTAC Postprocessor version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
-    logging.info("Using sqlite3 module version: " + sqlite3.version)
+    #logging.info("Using sqlite3 module version: " + sqlite3.version) #JMJ being depricated in Python 3.14
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
 
     print("Program started at " + time.asctime(), file=logfile)
     print("ERTAC Post Processor version: " + VERSION, file=logfile)
     print("Running under python version: " + sys.version, file=logfile)
-    print("Using sqlite3 module version: " + sqlite3.version, file=logfile)
+    #print("Using sqlite3 module version: " + sqlite3.version, file=logfile) #JMJ being depricated in Python 3.14
     print("Linked against sqlite3 database library version: " + sqlite3.sqlite_version, file=logfile)
     print("Run with arguments" + argument_list, file=logfile)
     print("Model code versions:", file=logfile)

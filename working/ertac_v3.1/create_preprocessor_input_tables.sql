@@ -78,7 +78,7 @@ so2_controls TEXT,
 nox_controls TEXT,
 pm_controls TEXT,
 hg_controls	TEXT,
-program_code TEXT
+program_code TEXT,
 PRIMARY KEY (orispl_code, unitid, op_date, op_hour));
 
 -- ERTAC_HOURLY_NONCAMD, p.30, same format as CAMD_HOURLY_BASE

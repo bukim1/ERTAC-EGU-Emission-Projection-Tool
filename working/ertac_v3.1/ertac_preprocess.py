@@ -162,14 +162,14 @@ def main(argv=None):
     logging.info("Using ertac_lib version: " + ertac_lib.VERSION)
     logging.info("Using ertac_tables version: " + ertac_tables.VERSION)
     logging.info("Running under python version: " + sys.version)
-    logging.info("Using sqlite3 module version: " + sqlite3.version)
+    #logging.info("Using sqlite3 module version: " + sqlite3.version) #JMJ being depricated in Python 3.14
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
     print("Program started at " + time.asctime(), file=logfile)
     print("ERTAC EGU preprocessor version: " + VERSION, file=logfile)
     print("Using ertac_lib version: " + ertac_lib.VERSION, file=logfile)
     print("Using ertac_tables version: " + ertac_tables.VERSION, file=logfile)
-    print("Running under python version: " + sys.version, file=logfile)
-    print("Using sqlite3 module version: " + sqlite3.version, file=logfile)
+    #print("Running under python version: " + sys.version, file=logfile) #JMJ being depricated in Python 3.14
+    print("Using sqlite3 module version: " + sqlite3.sqlite_version, file=logfile)
     print("Linked against sqlite3 database library version: " + sqlite3.sqlite_version, file=logfile)
     print("Model code versions:", file=logfile)
     for file_name in [os.path.basename(sys.argv[0]), 'ertac_lib.py', 'ertac_tables.py',

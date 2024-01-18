@@ -38,7 +38,7 @@ default_state_set = set(['AK', 'AL', 'AR', 'AS', 'AZ', 'CA', 'CO', 'CT', 'DC', '
                  'VA', 'VI', 'VT', 'WA', 'WI', 'WV', 'WY'])
 
 try:
-    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), 'rU')
+    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'states.csv'), newline='')
     states = []
     cr = csv.reader(cf)
     for row in cr:
@@ -54,7 +54,7 @@ except IOError:
 #jmj 9/7/2017 now allows for a file to be read in with fuel unit type bins set in the same spot as the state file
 default_fuel_set = set(['BOILER GAS', 'COAL', 'COMBINED CYCLE GAS', 'OIL', 'SIMPLE CYCLE GAS'])
 try:
-    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'fuel_unit_type_bins.csv'), 'rU')
+    cf = open(os.path.join(os.path.relpath(sys.path[0]), 'fuel_unit_type_bins.csv'), newline='')
     fuels = []
     optional_fuels = []
     cr = csv.reader(cf)
@@ -296,7 +296,7 @@ input_variable_columns_v1 = (('ERTAC Region', 'str', True, None),
                           ('Facility #9', 'str', False, None),
                           ('Facility #10', 'str', False, None),
                           ('Maximum annual ERTAC UF', 'float', True, (0.0, 1.0)),
-                          ('Capacity Demand Deficit Review', 'int', True, (100, 8784)), #JMJ changed max to 8784 since it was causing problems
+                          ('Capacity Demand Deficit Review', 'int', True, (100, 1000)),
                           ('Unit Optimal Load Threshold Determinant', 'float', True, (0.0, 100.0)),
                           ('Proxy % (for coal only)', 'float', True, (20.0, 90.0)),
                           ('Generic SO2 control efficiency', 'float', True, (0.0, 100.0)),
@@ -349,7 +349,7 @@ input_variable_columns = (
     ('Facility #9', 'str', False, None),
     ('Facility #10', 'str', False, None),
     ('Maximum annual ERTAC UF', 'float', True, (0.0, 1.0)),
-    ('Capacity Demand Deficit Review', 'int', True, (100, 1000)),
+    ('Capacity Demand Deficit Review', 'int', True, (100, 8000)), #JMJ 1/18/2024 high end of range triggering too many warnings
     ('Unit Optimal Load Threshold Determinant', 'float', True, (0.0, 100.0)),
     ('Proxy % (for coal only)', 'float', True, (20.0, 90.0)),
     ('Generic SO2 control efficiency', 'float', True, (0.0, 100.0)),

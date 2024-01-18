@@ -377,11 +377,11 @@ additional_control_emission_columns = (('ORISPL_CODE', 'str', True, None),
 annual_summary_columns = (('oris', 'str', True, None),
                           ('unit id', 'str', True, None),
                           ('Facility Name', 'str', False, None),
-                          ('State', 'str', True, state_set),
+                          ('State', 'str', True, ertac_tables.state_set),
                           ('FIPS Code', 'str', False, None),
                           ('ertac region', 'str', True, None),
-                          ('ertac fuel unit type bin', 'str', True, fuel_set),
-                          ('BY ertac fuel unit type bin', 'str', True, fuel_set),
+                          ('ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
+                          ('BY ertac fuel unit type bin', 'str', True, ertac_tables.fuel_set),
                           ('max unit heat input (mmBtu)', 'float', False, None),
                           ('ertac heat rate (btu/kw-hr)', 'float', False, (3000.0, 20000.0)),
                           ('Generation Capacity (MW)', 'float', False, None),
@@ -402,6 +402,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('BY OS heat input (mmbtu)', 'float', False, None),
                           ('BY OS generation (MW-hrs)', 'float', False, None),
+                          ('BY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('BY NonOS NOx (tons)', 'float', False, None),
                           ('BY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('BY Annual CO2 (tons)', 'float', False, None),
@@ -416,6 +417,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY OS heat input (mmbtu)', 'float', False, None),
                           ('FY OS generation (MW-hrs)', 'float', False, None),
+                          ('FY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('FY NonOS NOx (tons)', 'float', False, None),
                           ('FY Average NonOS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY Annual CO2 (tons)', 'float', False, None),
@@ -1569,13 +1571,13 @@ def main(argv=None):
     logging.info("Program started at " + time.asctime())
     logging.info("ERTAC SMOKE Processor version: " + VERSION)
     logging.info("Running under python version: " + sys.version)
-    logging.info("Using sqlite3 module version: " + sqlite3.version)
+    #logging.info("Using sqlite3 module version: " + sqlite3.version) #JMJ being depricated in Python 3.14
     logging.info("Linked against sqlite3 database library version: " + sqlite3.sqlite_version)
 
     print("Program started at " + time.asctime(), file=logfile)
     print("ERTAC SMOKE Processor version: " + VERSION, file=logfile)
     print("Running under python version: " + sys.version, file=logfile)
-    print("Using sqlite3 module version: " + sqlite3.version, file=logfile)
+    #print("Using sqlite3 module version: " + sqlite3.version, file=logfile) #JMJ being depricated in Python 3.14
     print("Linked against sqlite3 database library version: " + sqlite3.sqlite_version, file=logfile)
     print("Run with arguments" + argument_list, file=logfile)
     print("Model code versions:", file=logfile)

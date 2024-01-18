@@ -3,3 +3,4 @@
 /workspace.xml
 /.idea/
 /.venv/
+/__pycache__/
