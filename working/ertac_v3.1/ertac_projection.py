@@ -1592,8 +1592,11 @@ def add_generic_units(conn, region, fuel, capacity_needed, new_unit_max_size, ne
         (state_code, units_created) = conn.execute(
             """SELECT state_code, units_created FROM generic_unit_counts WHERE state = ?""", (state,)).fetchone()
         unit = "G" + state_code + str(units_created).zfill(3)
-        logging.info("  Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit)))
-        print("  Creating new generic unit: " + ertac_lib.nice_str((region, fuel, plant, unit)), file=logfile)
+
+        #JMJ 1/25/2024 changed the new unit generic message to provide more information
+        logging.info("  Creating new generic unit ("+str(unit_count)+"): " + ertac_lib.nice_str((region, fuel, plant, unit))+" - Capacity needed after creation: "+str(capacity_needed))
+        print("  Creating new generic unit ("+str(unit_count)+"): " + ertac_lib.nice_str((region, fuel, plant, unit))+" - Capacity needed after creation: "+str(capacity_needed), file=logfile)
+
         plant_columns = conn.execute("SELECT " + ertac_tables.uaf_plant_column_names + """ FROM calc_updated_uaf
         WHERE ertac_region = ?
         AND orispl_code = ?""", (region, plant)).fetchone()
@@ -2621,9 +2624,9 @@ def summarize_future_capacity(conn, logfile):
                 AND cfd.ertac_fuel_unit_type_bin = cgr.ertac_fuel_unit_type_bin""").fetchall():
         if calc_growth_rate is None:
             logging.info(
-                "Warning: annual growth rate could not be calculated since BY Gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type)
+                "Warning: could not determine if AGR was honored because AGR could not be calculated since BY gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type)
             print(
-                "Warning: annual growth rate could not be calculated since BY Gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type, file=logfile)
+                "Warning: could not determine if AGR was honored because AGR could not be calculated since BY gen = 0 for region: " + region + ", fuel/unit type bin: " + unit_type, file=logfile)
         else:
             if round(calc_growth_rate, 12) != round(growth_rate, 12):
                 logging.info(

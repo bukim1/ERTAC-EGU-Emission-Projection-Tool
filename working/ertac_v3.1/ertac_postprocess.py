@@ -834,6 +834,35 @@ def summarize_hourly_results(conn, inputvars, logfile):
                 conn.execute(query + where, [orisid, unitid, region, fuel_bin] + inputs)
 
     # jump out of the state, fuel bin loop here
+    #JMJ 1/25/2024 making this required to calculate nox per active OSD
+    conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
+            SELECT 
+            ertac_region, 
+            ertac_fuel_unit_type_bin, 
+            by_ertac_fuel_unit_type_bin, 
+            orispl_code, 
+            unitid, 
+            state, 
+            op_date,
+            sum(COALESCE(by_gload,0)), 
+            sum(COALESCE(fy_gload,0)), 
+            sum(COALESCE(by_heat_input,0)), 
+            sum(COALESCE(fy_heat_input,0)), 
+            sum(COALESCE(by_so2_mass,0)), 
+            sum(COALESCE(fy_so2_mass,0)), 
+            sum(COALESCE(by_nox_mass,0)), 
+            sum(COALESCE(fy_nox_mass,0)), 
+            sum(COALESCE(by_co2_mass,0)), 
+            sum(COALESCE(fy_co2_mass,0)),
+            data_type,
+            facility_name
+
+            FROM hourly_activity_summary has
+            JOIN calendar_hours ch
+            ON has.calendar_hour = ch.calendar_hour
+
+            GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""")
+
     conn.execute("""INSERT INTO annual_summary(ertac_region, 
             ertac_fuel_unit_type_bin, 
             by_ertac_fuel_unit_type_bin, 
@@ -945,14 +974,18 @@ def summarize_hourly_results(conn, inputvars, logfile):
             has.facility_name,
             cuuaf.program_codes
         FROM hourly_activity_summary has
-        
+      
+        LEFT JOIN daily_unit_activity_summary duas
+        ON duas.orispl_code = cuh.orispl_code
+        AND duas.unitid = cuh.unitid
+        AND duas.ertac_region = cuh.ertac_region
+        AND duas.ertac_fuel_unit_type_bin = cuh.ertac_fuel_unit_type_bin
       
         LEFT JOIN calc_unit_hierarchy cuh
         ON has.orispl_code = cuh.orispl_code
         AND has.unitid = cuh.unitid
         AND has.ertac_region = cuh.ertac_region
         AND has.ertac_fuel_unit_type_bin = cuh.ertac_fuel_unit_type_bin
-        
         
         LEFT JOIN generic_units_created guc
         ON has.orispl_code = guc.orispl_code
@@ -971,34 +1004,6 @@ def summarize_hourly_results(conn, inputvars, logfile):
                   ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year'])] + [
                      inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 16)
 
-    if 'include-unit-day' in inputvars:
-        conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
-        SELECT 
-        ertac_region, 
-        ertac_fuel_unit_type_bin, 
-        by_ertac_fuel_unit_type_bin, 
-        orispl_code, 
-        unitid, 
-        state, 
-        op_date,
-        sum(COALESCE(by_gload,0)), 
-        sum(COALESCE(fy_gload,0)), 
-        sum(COALESCE(by_heat_input,0)), 
-        sum(COALESCE(fy_heat_input,0)), 
-        sum(COALESCE(by_so2_mass,0)), 
-        sum(COALESCE(fy_so2_mass,0)), 
-        sum(COALESCE(by_nox_mass,0)), 
-        sum(COALESCE(fy_nox_mass,0)), 
-        sum(COALESCE(by_co2_mass,0)), 
-        sum(COALESCE(fy_co2_mass,0)),
-        data_type,
-        facility_name
-    
-        FROM hourly_activity_summary has
-        JOIN calendar_hours ch
-        ON has.calendar_hour = ch.calendar_hour
-        
-        GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""")
 
     if 'include-rg-hr' in inputvars:
         conn.execute("""INSERT INTO hourly_regional_activity_summary(ertac_region, ertac_fuel_unit_type_bin, data_type, calendar_hour, hierarchy_hour, by_gload, fy_gload, fy_op_max_count, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, hour_specific_growth_rate, afygr)
