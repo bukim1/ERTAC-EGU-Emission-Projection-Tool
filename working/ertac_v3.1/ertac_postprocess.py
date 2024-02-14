@@ -90,6 +90,7 @@ daily_unit_activity_summary_columns = (('ertac region', 'str', True, None),
                                        ('unit id', 'str', True, None),
                                        ('state', 'str', True, state_set),
                                        ('calendar day', 'int', True, (0, 365)),
+                                       ('Ozone Season?', 'int', True, (0,1)),
                                        ('BY gload (MW)', 'float', False, (0.0, 2300.0)),
                                        ('FY gload (MW)', 'float', False, (0.0, 2300.0)),
                                        ('BY heat input (mmBtu)', 'float', False, (0.0, 29000.0)),
@@ -163,6 +164,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('BY OS NOx (tons)', 'float', False, None),
                           ('BY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('BY OS heat input (mmbtu)', 'float', False, None),
+                          ('BY OS active days', 'float', False, None),
                           ('BY OS generation (MW-hrs)', 'float', False, None),
                           ('BY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('BY NonOS NOx (tons)', 'float', False, None),
@@ -178,6 +180,7 @@ annual_summary_columns = (('oris', 'str', True, None),
                           ('FY OS NOx (tons)', 'float', False, None),
                           ('FY Average OS NOx Rate (lbs/mmbtu)', 'float', False, None),
                           ('FY OS heat input (mmbtu)', 'float', False, None),
+                          ('FY OS active days', 'float', False, None),
                           ('FY OS generation (MW-hrs)', 'float', False, None),
                           ('FY Average OS NOx/Active Day (ton/day)', 'float', False, None),
                           ('FY NonOS NOx (tons)', 'float', False, None),
@@ -835,7 +838,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
 
     # jump out of the state, fuel bin loop here
     #JMJ 1/25/2024 making this required to calculate nox per active OSD
-    conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
+    conn.execute("""INSERT INTO daily_unit_activity_summary(ertac_region, ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, orispl_code, unitid, state, calendar_day, ozone_season, by_gload, fy_gload, by_heat_input, fy_heat_input, by_so2_mass, fy_so2_mass, by_nox_mass, fy_nox_mass, by_co2_mass, fy_co2_mass, data_type, facility_name)
             SELECT 
             ertac_region, 
             ertac_fuel_unit_type_bin, 
@@ -844,6 +847,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             unitid, 
             state, 
             op_date,
+            sum((CASE WHEN has.calendar_hour >= ? and has.calendar_hour <= ? THEN 1 ELSE 0 END))/24,
             sum(COALESCE(by_gload,0)), 
             sum(COALESCE(fy_gload,0)), 
             sum(COALESCE(by_heat_input,0)), 
@@ -861,7 +865,8 @@ def summarize_hourly_results(conn, inputvars, logfile):
             JOIN calendar_hours ch
             ON has.calendar_hour = ch.calendar_hour
 
-            GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""")
+            GROUP BY ertac_region,  ertac_fuel_unit_type_bin, orispl_code, unitid, state, data_type, facility_name, op_date""",
+                 [inputvars['ozone_start_hour'], inputvars['ozone_end_hour']])
 
     conn.execute("""INSERT INTO annual_summary(ertac_region, 
             ertac_fuel_unit_type_bin, 
@@ -906,6 +911,10 @@ def summarize_hourly_results(conn, inputvars, logfile):
             fy_os_nox_rate, 
             by_non_os_nox_rate, 
             fy_non_os_nox_rate,
+            by_os_active_days,
+            fy_os_active_days,
+            by_os_nox_active_day,
+            fy_os_nox_active_day,
             fy_so2_max,
             fy_nox_max,
             by_co2_mass, 
@@ -917,7 +926,7 @@ def summarize_hourly_results(conn, inputvars, logfile):
             program_codes)
         SELECT has.ertac_region, 
             has.ertac_fuel_unit_type_bin, 
-            by_ertac_fuel_unit_type_bin, 
+            has.by_ertac_fuel_unit_type_bin, 
             has.orispl_code, 
             has.unitid, 
             has.state, 
@@ -931,42 +940,48 @@ def summarize_hourly_results(conn, inputvars, logfile):
             1000 * max_ertac_hi_hourly_summer / ertac_heat_rate, 
             cuuaf.nameplate_capacity,
             sum(hourly_hi_limit='Y'), 
-            sum(COALESCE(fy_heat_input,0)>0), 
-            sum(COALESCE(by_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
-            sum(COALESCE(fy_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
-            sum(COALESCE(by_gload,0)), 
-            sum(COALESCE(fy_gload,0)), 
-            sum(COALESCE(by_heat_input,0)), 
-            sum(COALESCE(fy_heat_input,0)), 
-            sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(by_gload*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(fy_gload*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(by_so2_mass,0)), 
-            sum(COALESCE(fy_so2_mass,0)),
-            sum(COALESCE(by_nox_mass,0)), 
-            sum(COALESCE(fy_nox_mass,0)), 
+            sum(COALESCE(has.fy_heat_input,0)>0), 
+            sum(COALESCE(has.by_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
+            sum(COALESCE(has.fy_heat_input,0))/(max_ertac_hi_hourly_summer* ?), 
+            sum(COALESCE(has.by_gload,0)), 
+            sum(COALESCE(has.fy_gload,0)), 
+            sum(COALESCE(has.by_heat_input,0)), 
+            sum(COALESCE(has.fy_heat_input,0)), 
+            sum(COALESCE(has.by_heat_input*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.fy_heat_input*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.by_gload*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.fy_gload*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.by_so2_mass,0)), 
+            sum(COALESCE(has.fy_so2_mass,0)),
+            sum(COALESCE(has.by_nox_mass,0)), 
+            sum(COALESCE(has.fy_nox_mass,0)), 
             
-            sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0)), 
-            sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0)), 
+            sum(COALESCE(has.by_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.fy_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            sum(COALESCE(has.by_nox_mass*(has.calendar_hour <= ? or has.calendar_hour > ?),0)), 
+            sum(COALESCE(has.fy_nox_mass*(has.calendar_hour <= ? or has.calendar_hour > ?),0)), 
             
-            2000*sum(COALESCE(by_so2_mass,0))/sum(COALESCE(by_heat_input,0)), 
-            2000*sum(COALESCE(fy_so2_mass,0))/sum(COALESCE(fy_heat_input,0)), 
-            2000*sum(COALESCE(by_nox_mass,0))/sum(COALESCE(by_heat_input,0)), 
-            2000*sum(COALESCE(fy_nox_mass,0))/sum(COALESCE(fy_heat_input,0)),
+            2000*sum(COALESCE(has.by_so2_mass,0))/sum(COALESCE(has.by_heat_input,0)), 
+            2000*sum(COALESCE(has.fy_so2_mass,0))/sum(COALESCE(has.fy_heat_input,0)), 
+            2000*sum(COALESCE(has.by_nox_mass,0))/sum(COALESCE(has.by_heat_input,0)), 
+            2000*sum(COALESCE(has.fy_nox_mass,0))/sum(COALESCE(has.fy_heat_input,0)),
             
-            2000*sum(COALESCE(by_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            2000*sum(COALESCE(fy_nox_mass*(calendar_hour > ? and calendar_hour <= ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour > ? and calendar_hour <= ?),0)), 
-            2000*sum(COALESCE(by_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(by_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
-            2000*sum(COALESCE(fy_nox_mass*(calendar_hour <= ? or calendar_hour > ?),0))/ sum(COALESCE(fy_heat_input*(calendar_hour <= ? or calendar_hour > ?),0)), 
+            2000*sum(COALESCE(has.by_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0))/ sum(COALESCE(has.by_heat_input*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            2000*sum(COALESCE(has.fy_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0))/ sum(COALESCE(has.fy_heat_input*(has.calendar_hour > ? and has.calendar_hour <= ?),0)), 
+            2000*sum(COALESCE(has.by_nox_mass*(has.calendar_hour <= ? or has.calendar_hour > ?),0))/ sum(COALESCE(has.by_heat_input*(has.calendar_hour <= ? or has.calendar_hour > ?),0)), 
+            2000*sum(COALESCE(has.fy_nox_mass*(has.calendar_hour <= ? or has.calendar_hour > ?),0))/ sum(COALESCE(has.fy_heat_input*(has.calendar_hour <= ? or has.calendar_hour > ?),0)), 
+            
+            SUM((CASE WHEN duas.by_heat_input > 0 THEN 1 ELSE 0 END) *ozone_season)/24, 
+            SUM((CASE WHEN duas.fy_heat_input > 0 THEN 1 ELSE 0 END) *ozone_season)/24,  
+       
+            sum(COALESCE(has.by_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0))*24/ SUM((CASE WHEN duas.by_heat_input > 0 THEN 1 ELSE 0 END) *ozone_season), 
+            sum(COALESCE(has.fy_nox_mass*(has.calendar_hour > ? and has.calendar_hour <= ?),0))*24/ SUM((CASE WHEN duas.fy_heat_input > 0 THEN 1 ELSE 0 END) *ozone_season),  
     
-            max(COALESCE(fy_so2_mass,0)),
-            max(COALESCE(fy_nox_mass,0)),
+            max(COALESCE(has.fy_so2_mass,0)),
+            max(COALESCE(has.fy_nox_mass,0)),
             
-            sum(COALESCE(by_co2_mass,0)), 
-            sum(COALESCE(fy_co2_mass,0)),
+            sum(COALESCE(has.by_co2_mass,0)), 
+            sum(COALESCE(has.fy_co2_mass,0)),
             
             has.data_type, 
             substr('YN', (coalesce(guc.unitid,-1) == -1)+1, 1), 
@@ -975,11 +990,15 @@ def summarize_hourly_results(conn, inputvars, logfile):
             cuuaf.program_codes
         FROM hourly_activity_summary has
       
+        JOIN calendar_hours ch
+        ON has.calendar_hour = ch.calendar_hour
+            
         LEFT JOIN daily_unit_activity_summary duas
-        ON duas.orispl_code = cuh.orispl_code
-        AND duas.unitid = cuh.unitid
-        AND duas.ertac_region = cuh.ertac_region
-        AND duas.ertac_fuel_unit_type_bin = cuh.ertac_fuel_unit_type_bin
+        ON duas.orispl_code = has.orispl_code
+        AND duas.unitid = has.unitid
+        AND duas.ertac_region = has.ertac_region
+        AND duas.ertac_fuel_unit_type_bin = has.ertac_fuel_unit_type_bin
+        AND duas.calendar_day = ch.op_date
       
         LEFT JOIN calc_unit_hierarchy cuh
         ON has.orispl_code = cuh.orispl_code
@@ -999,10 +1018,10 @@ def summarize_hourly_results(conn, inputvars, logfile):
         AND cuuaf.ertac_region = has.ertac_region
         AND cuuaf.ertac_fuel_unit_type_bin = has.ertac_fuel_unit_type_bin
         
-        GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""",
+        GROUP BY has.ertac_region, has.ertac_fuel_unit_type_bin, has.by_ertac_fuel_unit_type_bin, has.state, has.orispl_code, has.unitid, has.data_type, has.facility_name""",
                  [ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year']),
                   ertac_lib.hours_in_year(inputvars['base_year'], inputvars['future_year'])] + [
-                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 16)
+                     inputvars['ozone_start_hour'], inputvars['ozone_end_hour']] * 18)
 
 
     if 'include-rg-hr' in inputvars:
