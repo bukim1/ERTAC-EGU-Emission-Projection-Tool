@@ -1,0 +1,24 @@
+Program started at Fri Feb  9 10:05:28 2024
+ERTAC Post Processor version: 3.0
+Running under python version: 3.12.1 (tags/v3.12.1:2305ca5, Dec  7 2023, 22:03:25) [MSC v.1937 64 bit (AMD64)]
+Linked against sqlite3 database library version: 3.43.1
+Run with arguments
+Model code versions:
+  ertac_postprocess.py: Fri Feb  9 09:37:57 2024
+  ertac_lib.py: Tue Jan  9 11:31:18 2024
+  ertac_tables.py: Thu Jan 18 15:51:53 2024
+  ertac_reports.py: Tue Jan  9 11:31:18 2024
+  create_preprocessor_output_tables.sql: Tue Jan  9 11:31:18 2024
+  create_projection_output_tables.sql: Tue Jan  9 11:31:18 2024
+  create_postprocessing_tables.sql: Thu Feb  8 15:17:08 2024
+Creating database tables in memory.
+Loading intermediate data:
+
+Loading input data from file: .\states.csv
+File: .\states.csv; read 57 lines, stored 57 data rows in table: states
+
+File: calc_growth_rates.csv -- Could not be read.
+
+File: calc_generation_parms_v2.csv -- Could not be read.
+
+File: calc_input_variables_v2.csv -- Could not be read.

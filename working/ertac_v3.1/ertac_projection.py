@@ -7,7 +7,7 @@
 import sys
 
 VERSION = "3.1"
-#Updated to v3.1 as of January 18, 2024
+#Updated to v3.1 as of February 15, 2024
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module
@@ -1067,11 +1067,12 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
         if total_proxy is None:
             total_proxy = 0.0
 
+        #JMJ 2/15/2024 Added COALESCE(future_projected_generation,0) for when growth rate is missing.
         conn.execute("""UPDATE calc_generation_parms
         SET total_proxy_generation = ?,
         adjusted_projected_generation = MAX(future_projected_generation + net_demand_transfer - ?, 0.0),
         afygr = CASE WHEN base_actual_generation > base_retired_generation
-                     THEN MAX(future_projected_generation + net_demand_transfer - ?, 0.0) / (base_actual_generation - base_retired_generation)
+                     THEN MAX(COALESCE(future_projected_generation,0) + net_demand_transfer - ?, 0.0) / (base_actual_generation - base_retired_generation)
                      ELSE 0.0 END
         WHERE ertac_region = ?
         AND ertac_fuel_unit_type_bin = ?
@@ -1102,6 +1103,8 @@ def project_hourly(conn, region, fuel, deficit_review_hour, max_uf, base_year, f
         assign_proxy_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, max_uf, base_year, future_year,
                          logfile)
         # 5
+        if afygr is None:
+            print("stop")
         assign_grown_gen(conn, region, fuel, date, hour, calendar_hour, hierarchy_hour, afygr, max_uf, base_year,
                          future_year, inputvars, logfile)
 

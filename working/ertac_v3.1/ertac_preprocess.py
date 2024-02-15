@@ -5,7 +5,7 @@
 """Preprocessing steps for ERTAC EGU projection"""
 
 VERSION = "3.1"
-# Updated to version 3.1 as of January 18, 2024
+#Updated to v3.1 as of February 15, 2024
 
 # Check to see if all necessary library modules can be loaded.  If not, we're
 # running an unsupported version of Python, or there is no SQLite3 module

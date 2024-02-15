@@ -2,8 +2,8 @@
 
 """Utility routines for ERTAC EGU projection"""
 
-VERSION = "3.0"
-#Updated to v3.0 as of November 2, 2021
+VERSION = "3.1"
+#Updated to v3.1 as of February 15, 2024
 
 import sys, csv, logging, os, re, datetime
 
